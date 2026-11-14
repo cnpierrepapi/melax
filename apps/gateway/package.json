@@ -1,0 +1,22 @@
+{
+  "name": "@melax/gateway",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@melax/cashu": "*",
+    "@melax/core": "*",
+    "@melax/crypto": "*",
+    "@melax/i18n": "*",
+    "@melax/ledger": "*",
+    "@melax/lightning": "*",
+    "@melax/limits": "*",
+    "@melax/sms": "*",
+    "@melax/ussd": "*",
+    "@melax/vault": "*",
+    "fastify": "^5.12.8",
+    "zod": "^4.6.7"
+  }
+}
