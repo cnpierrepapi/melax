@@ -1,0 +1,24 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+*.log
+coverage/
+test-results/
+playwright-report/
+stills/
+.keys/
+infra/**/data/
+*.macaroon
+tls.cert
+tls.key
+
+# editor and assistant tooling never ships
+CLAUDE.md
+AGENTS.md
+.claude/
+.agents/
+skills-lock.json
+.vscode/
+.idea/

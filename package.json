@@ -1,0 +1,37 @@
+{
+  "name": "melax",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Bitcoin for any phone in Senegal: USSD, SMS and voice on top of Lightning and Cashu ecash.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=24.7"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:int": "vitest run --config vitest.int.config.ts",
+    "test:e2e": "playwright test",
+    "build:web": "npm run build -w @melax/simulator -w @melax/voucher-web -w @melax/verify -w @melax/console",
+    "start": "node apps/gateway/src/main.ts",
+    "seed": "node scripts/demo-seed.ts",
+    "smoke": "node scripts/smoke.ts"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.16",
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.11.0",
+    "eslint": "^10.15.0",
+    "fast-check": "^4.10.2",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.72.2",
+    "vitest": "^5.1.0"
+  }
+}
