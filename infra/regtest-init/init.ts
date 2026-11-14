@@ -4,7 +4,7 @@
 // Regtest only: this is the one process that can see all three nodes' credentials. It does not exist
 // on a public network, where channels are opened by each operator on their own.
 // Run by: the `regtest-init` service in compose.yaml. Safe to restart: every step checks before acting.
-import { writeFileSync } from "node:fs";
+import { rmSync, writeFileSync } from "node:fs";
 import { LndBackend } from "@melax/lightning";
 
 const RPC = process.env.BITCOIND_RPC ?? "http://bitcoind:18443";
@@ -55,6 +55,7 @@ async function mine(n: number, address: string): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  rmSync("/tmp/ready", { force: true }); // a restarted container must prove itself again
   await until("bitcoind", () => rpc<{ blocks: number }>("getblockchaininfo"));
   try {
     await rpc("createwallet", ["miner"]);

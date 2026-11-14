@@ -50,9 +50,11 @@ services:
       MINT_MAX_BALANCE: "20000000"
       MINT_MAX_MINT_BOLT11_SAT: "2000000"
       MINT_MAX_MELT_BOLT11_SAT: "2000000"
+      # Rate limits are per client address, and every Melax user reaches the mint through one gateway.
+      # The mint operator sets these knowing that; a public mint would allow-list the gateway instead.
       MINT_RATE_LIMIT: "TRUE"
-      MINT_GLOBAL_RATE_LIMIT_PER_MINUTE: "600"
-      MINT_TRANSACTION_RATE_LIMIT_PER_MINUTE: "300"
+      MINT_GLOBAL_RATE_LIMIT_PER_MINUTE: "6000"
+      MINT_TRANSACTION_RATE_LIMIT_PER_MINUTE: "3000"
       # Nutshell's own solvency guard: it compares what it issued with what its node holds.
       MINT_WATCHDOG_ENABLED: "TRUE"
       MINT_WATCHDOG_BALANCE_CHECK_INTERVAL_SECONDS: "60"
