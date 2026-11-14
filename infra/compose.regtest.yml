@@ -1,0 +1,61 @@
+# The private test chain and "the rest of the Lightning Network".
+# Nothing here exists in production: on a public network the chain is the chain, and lnd-world is
+# everybody else's node (the agent's own wallet, a relative paying in from abroad).
+services:
+  bitcoind:
+    image: btcpayserver/bitcoin:32.1
+    restart: unless-stopped
+    environment:
+      BITCOIN_NETWORK: regtest
+      BITCOIN_WALLETDIR: /data/wallets
+      BITCOIN_EXTRA_ARGS: |
+        rpcuser=melax
+        rpcpassword=melax
+        rpcport=18443
+        rpcbind=0.0.0.0:18443
+        rpcallowip=0.0.0.0/0
+        zmqpubrawblock=tcp://0.0.0.0:28332
+        zmqpubrawtx=tcp://0.0.0.0:28333
+        fallbackfee=0.0002
+        txindex=1
+        dbcache=64
+        maxmempool=50
+    volumes:
+      - bitcoind:/data
+    ports:
+      - "127.0.0.1:18443:18443"
+    healthcheck:
+      test: ["CMD-SHELL", "bitcoin-cli -regtest -rpcuser=melax -rpcpassword=melax -rpcport=18443 getblockchaininfo > /dev/null"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+
+  lnd-world:
+    image: lightninglabs/lnd:v0.21.8-beta
+    restart: unless-stopped
+    depends_on:
+      bitcoind:
+        condition: service_healthy
+    command:
+      - --noseedbackup
+      - --alias=world
+      - --bitcoin.regtest
+      - --bitcoin.node=bitcoind
+      - --bitcoind.rpchost=bitcoind:18443
+      - --bitcoind.rpcuser=melax
+      - --bitcoind.rpcpass=melax
+      - --bitcoind.zmqpubrawblock=tcp://bitcoind:28332
+      - --bitcoind.zmqpubrawtx=tcp://bitcoind:28333
+      - --rpclisten=0.0.0.0:10009
+      - --restlisten=0.0.0.0:8080
+      - --listen=0.0.0.0:9735
+      - --tlsextradomain=lnd-world
+      - --debuglevel=warn
+    volumes:
+      - lnd-world:/root/.lnd
+    ports:
+      - "127.0.0.1:18082:8080"
+
+volumes:
+  bitcoind:
+  lnd-world:

@@ -19,7 +19,7 @@
     "test:watch": "vitest",
     "test:int": "vitest run --config vitest.int.config.ts",
     "test:e2e": "playwright test",
-    "build:web": "npm run build -w @melax/simulator -w @melax/voucher-web -w @melax/verify -w @melax/console",
+    "build:web": "node scripts/build-web.mjs",
     "start": "node apps/gateway/src/main.ts",
     "seed": "node scripts/demo-seed.ts",
     "smoke": "node scripts/smoke.ts"

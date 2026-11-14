@@ -1,0 +1,33 @@
+# docker compose up
+# Brings up the whole of Melax on a private Bitcoin test network (regtest): chain, three Lightning
+# nodes, the Cashu mint, the database, a Nostr relay and the gateway with seeded demo data.
+# Then open http://localhost:8787
+#
+# Three files, three roles. In production the first two run on different machines with different owners.
+name: melax
+include:
+  - infra/compose.yml # trust domain 1: the gateway (phone numbers, sealed ecash)
+  - infra/compose.mint.yml # trust domain 2: the mint (blinded tokens only)
+  - infra/compose.regtest.yml # test chain and "the rest of the network"
+
+services:
+  regtest-init:
+    build: .
+    image: melax-app
+    restart: unless-stopped
+    command: ["node", "infra/regtest-init/init.ts"]
+    user: "0:0"
+    depends_on:
+      - bitcoind
+      - lnd-world
+      - lnd-gw
+      - lnd-mint
+    volumes:
+      - lnd-world:/lnd/world:ro
+      - lnd-gw:/lnd/gw:ro
+      - lnd-mint:/lnd/mint:ro
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/ready"]
+      interval: 3s
+      timeout: 3s
+      retries: 200

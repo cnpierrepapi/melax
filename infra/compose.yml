@@ -1,0 +1,59 @@
+# Trust domain 1: the gateway. It knows phone numbers and holds each user's ecash, sealed at rest.
+# It talks to the mint only over the mint's public Cashu API, exactly like any other wallet would.
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: melax
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-melax}
+      POSTGRES_DB: melax
+    volumes:
+      - pg:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:54329:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U melax -d melax"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+
+  lnd-gw:
+    image: lightninglabs/lnd:v0.21.8-beta
+    restart: unless-stopped
+    depends_on:
+      bitcoind:
+        condition: service_healthy
+    command:
+      - --noseedbackup
+      - --alias=melax-gateway
+      - --bitcoin.regtest
+      - --bitcoin.node=bitcoind
+      - --bitcoind.rpchost=bitcoind:18443
+      - --bitcoind.rpcuser=melax
+      - --bitcoind.rpcpass=melax
+      - --bitcoind.zmqpubrawblock=tcp://bitcoind:28332
+      - --bitcoind.zmqpubrawtx=tcp://bitcoind:28333
+      - --rpclisten=0.0.0.0:10009
+      - --restlisten=0.0.0.0:8080
+      - --listen=0.0.0.0:9735
+      - --tlsextradomain=lnd-gw
+      - --debuglevel=warn
+    volumes:
+      - lnd-gw:/root/.lnd
+    ports:
+      - "127.0.0.1:18081:8080"
+
+  relay:
+    image: scsibug/nostr-rs-relay:latest
+    restart: unless-stopped
+    user: "0:0"
+    volumes:
+      - relay:/usr/src/app/db
+    ports:
+      - "127.0.0.1:7447:8080"
+
+volumes:
+  pg:
+  lnd-gw:
+  relay:

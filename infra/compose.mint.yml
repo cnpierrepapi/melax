@@ -1,0 +1,73 @@
+# Trust domain 2: the mint. A stock Cashu mint (Nutshell) on its own Lightning node, with its own keys.
+# It sees blinded tokens only: it cannot tell who paid whom, and it never learns a phone number.
+# In production this file is deployed by a different operator, on a different machine, than compose.yml.
+services:
+  lnd-mint:
+    image: lightninglabs/lnd:v0.21.8-beta
+    restart: unless-stopped
+    depends_on:
+      bitcoind:
+        condition: service_healthy
+    command:
+      - --noseedbackup
+      - --alias=melax-mint
+      - --bitcoin.regtest
+      - --bitcoin.node=bitcoind
+      - --bitcoind.rpchost=bitcoind:18443
+      - --bitcoind.rpcuser=melax
+      - --bitcoind.rpcpass=melax
+      - --bitcoind.zmqpubrawblock=tcp://bitcoind:28332
+      - --bitcoind.zmqpubrawtx=tcp://bitcoind:28333
+      - --rpclisten=0.0.0.0:10009
+      - --restlisten=0.0.0.0:8080
+      - --listen=0.0.0.0:9735
+      - --tlsextradomain=lnd-mint
+      - --debuglevel=warn
+    volumes:
+      - lnd-mint:/root/.lnd
+    ports:
+      - "127.0.0.1:18083:8080"
+
+  mint:
+    image: cashubtc/nutshell:0.22.1
+    restart: unless-stopped
+    depends_on:
+      - lnd-mint
+    command: ["poetry", "run", "mint"]
+    environment:
+      MINT_LISTEN_HOST: 0.0.0.0
+      MINT_LISTEN_PORT: "3338"
+      MINT_PRIVATE_KEY: ${MINT_PRIVATE_KEY:-regtest-only-mint-key-change-me}
+      MINT_DATABASE: /app/data/mint
+      MINT_INFO_NAME: Melax mint (regtest)
+      MINT_INFO_DESCRIPTION: Pilot mint for Melax. Test network, no real value.
+      MINT_BACKEND_BOLT11_SAT: LndRestWallet
+      MINT_LND_REST_ENDPOINT: https://lnd-mint:8080
+      MINT_LND_REST_CERT: /lnd/tls.cert
+      MINT_LND_REST_MACAROON: /lnd/data/chain/bitcoin/regtest/admin.macaroon
+      # Pilot keyset: no input fee. Caps keep a bug or a thief small.
+      MINT_INPUT_FEE_PPK: "0"
+      MINT_MAX_BALANCE: "20000000"
+      MINT_MAX_MINT_BOLT11_SAT: "2000000"
+      MINT_MAX_MELT_BOLT11_SAT: "2000000"
+      MINT_RATE_LIMIT: "TRUE"
+      MINT_GLOBAL_RATE_LIMIT_PER_MINUTE: "600"
+      MINT_TRANSACTION_RATE_LIMIT_PER_MINUTE: "300"
+      # Nutshell's own solvency guard: it compares what it issued with what its node holds.
+      MINT_WATCHDOG_ENABLED: "TRUE"
+      MINT_WATCHDOG_BALANCE_CHECK_INTERVAL_SECONDS: "60"
+      DEBUG: "FALSE"
+    volumes:
+      - mint-data:/app/data
+      - lnd-mint:/lnd:ro
+    ports:
+      - "127.0.0.1:3338:3338"
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:3338/v1/info', timeout=3)\""]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+
+volumes:
+  lnd-mint:
+  mint-data:
