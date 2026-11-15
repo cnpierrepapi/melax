@@ -8,7 +8,7 @@ Target: Dakar Bitcoin Hack 2026. Submissions close Fri 20 Nov 2026 at 20:00 UTC 
 Read this file before touching the code. It says what is done, what comes next, and which rules keep new work
 from breaking old work. Whoever finishes a phase updates it before stopping.
 
-Last updated: 15 Nov 2026, after phase 5.
+Last updated: 15 Nov 2026, after phase 6.
 
 ## 1. How this build runs
 
@@ -39,8 +39,8 @@ Order is by what a judge can see and check first. The owner can reorder the phas
 | 3 | Limits, SMS, USSD SDK, wording in three languages | Done | `npm test`: limits 10, sms 15, ussd 18, i18n 9 |
 | 4 | Wallet core over USSD: accounts, PIN, balance, send, receive, history, account menu, receipts by SMS | Done | `npm test`: gateway 143 (machine 72, users 17, http 17, perform 13, smsout 9, rates 8, config 7). `npm run test:int`: wallet 15. Both on PGlite and on Postgres 17. `node scripts/mutate.mjs`: 9 of 9 caught. The server was started once on the regtest stack (section 3, "What phase 4 handed over") |
 | 5 | Something to look at: web phone simulator, landing page with a demo button, one-command start, demo seed, a real top-up | Done | `npm test`: 282 in all (demo 22, config 8, page copy 7 are new). `npm run test:int`: 78 (demo 7). `npm run test:e2e`: 10. Gateway tests also on Postgres 17. `node scripts/mutate.mjs`: 15 of 15 caught. Clean `docker compose up`: 126 s. Stills looked at in three languages |
-| 6 | Agents: cash-in and cash-out with hold-invoice escrow, bonds, disputes | **Next** | See section 3 |
-| 7 | Vouchers and merchants | Not started | Section 7 |
+| 6 | Agents: cash-in and cash-out with hold-invoice escrow, bonds, disputes | Done | `npm test`: 350 in all (escrow 18, trade 7 are new; the menus went from 72 to 113). `npm run test:int`: 101 (escrow 19, NWC sandbox 3). `npm run test:e2e`: 12. Gateway tests also on Postgres 17 (234 and 45). `node scripts/mutate.mjs`: 25 of 25 caught. Clean `docker compose up`: 123 s. Probe: LND's default held a payment 65 blocks, 432 held one 414 |
+| 7 | Vouchers and merchants | **Next** | See section 3 |
 | 8 | Lightning address, pay codes, moving to a smartphone | Not started | Section 7 |
 | 9 | Scam shield and account recovery | Not started | Section 7 |
 | 10 | Public proof: Nostr offers and receipts, reserve snapshots, verify page | Not started | Section 7 |
@@ -54,169 +54,149 @@ The scope rule from the first plan still holds: everything gets built. Phases 14
 carry the most risk for the least a judge can check, and phase 13 comes before them so a submission exists even
 if time runs out.
 
-## 3. Next phase in detail: phase 6, agents
+## 3. Next phase in detail: phase 7, vouchers and merchants
 
 ### What it delivers
 
-Francs become sats and sats become francs through a person: an agent with a mobile-money account. Melax never
-touches the francs. During a cash-in the agent's sats sit in a Lightning payment that is locked, not delivered,
-until the agent says the francs arrived. During a cash-out the user's ecash sits in an escrow account until the
-user says the francs arrived.
+Two things that let money reach people who are not in Melax yet, and let a shop take it.
 
-Menu entries 5 (Depot) and 6 (Retrait) stop answering "Bientot disponible". An agent gets a desk in the menu. In
-the simulator, the second phone can be an agent, so a visitor can walk a cash-in between two phones.
+Vouchers. A user turns part of their balance into a code: 16 characters, in four groups. Whoever holds the code
+can redeem it, by USSD, by SMS (`BON <code>`) or on a web page. A voucher nobody redeems goes back to the person who
+made it after 30 days. Sending to a number with no account, which is refused today, becomes an SMS voucher to
+that number.
+
+Merchants. A shop gets a 5-digit merchant code. A customer presses 4, types the code and an amount, sees the shop's
+name, types their code, and both get a receipt by SMS. The shop gets an evening summary. A poster with the dial
+string for the shop's code.
+
+Menu entries 4 (Payer marchand) and 7 (Bons) stop answering "Bientot disponible".
 
 ### Read first
 
-- Rules 14 to 18 (Lightning), 44 to 50 (gateway), 55 and 60 (deposits and SMS kinds) in section 4.
-- `packages/lightning/test/contract.ts`: "hold then settle", "hold then cancel", "cancel before payment". It shows how to pay a hold invoice without waiting for the payment to finish, and `quietBalance`.
-- `apps/gateway/src/wallet.ts`, `deposit` and `onDepositSettled`: a cash-in ends the same way.
-- `packages/vault/src/index.ts`, `melt`: a cash-out ends there.
-- `packages/i18n/src/messages.ts`: the screens and SMS for this phase are already written (`agents.*`, `dep.*`, `wd.*`, `dispute.*`, `agent.*`, `sms.dep_*`, `sms.wd_*`, `sms.dispute*`). Use them. Add only what is missing, in three languages.
+- Rules 2, 6, 7, 9 (money), 21 and 23 (Cashu), 44 to 50 (gateway), 55, 59 and 62 (pages), and the new rules 69 to 80 from phase 6, in section 4.
+- `packages/crypto/src/index.ts`: `newVoucherCode`, `normalizeVoucherCode`, `formatVoucherCode`, `voucherCodeHash`, `voucherKey` (scrypt, then a secp256k1 key), `newMerchantCode`. The code and its check character are already built and tested.
+- `packages/vault/test/vault.itest.ts`, "locked ecash for vouchers": `Vault.transfer` with `lock` to a voucher owner, and with `privkey` to redeem. `Vault.liveProofs` hands the locked token to a page. `Vault.writeOffSpent` notices a voucher redeemed in another wallet.
+- `packages/cashu/src/index.ts`: `P2PKOptions`, `planSwap(..., lock)`, `wireProofs`. Read `node_modules/@cashu/cashu-ts/lib/types/index.d.ts` for what a P2PK lock can carry (locktime, refund keys) in 4.13.1.
+- `packages/sms/src/index.ts`: `parseCommand` already returns `{ cmd: "voucher", code }` for `BON` and `VOUCHER`. `apps/gateway/src/smsin.ts` answers it with help today.
+- `packages/i18n/src/messages.ts`: `vch.*`, `send.confirm_voucher`, `send.voucher_done`, `sms.voucher_*`, `pay.*`, `merch.*`, `sms.merchant_paid`, `sms.merchant_summary` are written. Use them; add only what is missing, in three languages.
+- `apps/gateway/src/escrow/engine.ts`: how a flow with several money steps is written: one row per flow, a state machine, a state-checked `UPDATE`, one idempotency key per step, settle handlers for history and SMS, a `sweep` on a timer. Vouchers need the same shape.
+- `apps/gateway/src/static.ts` and gap 9 below: the voucher page is the first page that is not the demo.
 
 ### Measure before building (first task)
 
-Write `scripts/probe/hold-cltv-probe.ts` and put its numbers in the build log before any engine code:
+Write `scripts/probe/voucher-probe.ts` and put its numbers in the build log before any engine code:
 
-1. How many blocks does a held payment survive on our LND nodes? `makeHoldInvoice` in `packages/lightning/src/lnd.ts` sets no `cltv_expiry`. The regtest helper mines a block every 30 s, so a default of some tens of blocks would end a held payment well inside the 45 minute window. Hold a payment, mine blocks, and find the block at which LND cancels it on its own.
-2. Set `cltv_expiry` on the hold invoice from a new setting (`ESCROW_CLTV_BLOCKS`), sized for the 3 hour hard cap on the network in use, and show with the probe that the payment survives that long. Check that the paying node accepts that delta.
-3. What does the gateway node report for a held payment after the invoice's own expiry time has passed?
-
-Do not write "the window is 45 minutes" anywhere until the probe shows a payment held that long.
+1. Does our Nutshell mint honour a NUT-11 locktime and refund key? Lock proofs to key A with a locktime already in the past and refund key B. Show that B can spend them, and that with a locktime in the future B cannot. If the mint does not enforce one of these, the 30-day return cannot rest on the mint and has to be the gateway's own sweep. Say which in section 9.
+2. How long does `voucherKey(code)` take on this machine, and in Chromium on a slow phone profile? It is scrypt on purpose. If the page needs more than about 3 s on a cheap phone, the redeem page has to say so while it works.
+3. What does a browser bundle with scrypt, secp256k1 and a P2PK signature weigh, gzipped? Rule 62 and the page rule say under 30 KB and nothing from another server. If the bundle cannot fit, the first plan's "unlock in the browser" is in trouble: write down the numbers and the two roads (a bigger page as an exception, or redeeming through the gateway with the code) and ask the owner before building the page.
 
 ### Where the code goes
 
 ```
-apps/gateway/src/escrow/trade.ts      the trade state machine, pure: (state, event) -> state or refusal
-apps/gateway/src/escrow/engine.ts     Escrow: start, agentConfirm, agentDecline, agentSent, userConfirm, cancel, dispute, decide, sweep
-apps/gateway/src/escrow/agents.ts     Agents: offers, bond, the agent's wallet handle
-apps/gateway/src/schema.ts            gateway/002-agents: tables `agents` and `trades`
-apps/gateway/src/ussd/machine.ts      flows 5 and 6, the agent desk
-apps/gateway/src/ussd/perform.ts      their effects
-apps/gateway/src/http.ts              POST /ops/escrow/decide, mounted only when OPERATOR_SECRET is set
-apps/gateway/src/demo.ts              two seeded agents, POST /sim/decide, agents in /sim/people
-apps/gateway/src/main.ts              escrow.sweep() once before listening, then on a timer
+apps/gateway/src/vouchers.ts         Vouchers: create, redeem (USSD, SMS, page), refund after the locktime, write-off when redeemed elsewhere, sweep
+apps/gateway/src/merchants.ts        Merchants: enrol, code, pay, summary, poster data
+apps/gateway/src/schema.ts           gateway/003-vouchers: tables `vouchers` and `merchants`
+apps/gateway/src/ussd/machine.ts     flows 4 (pay a shop) and 7 (create, redeem), send to a number with no account, the merchant's sales screen
+apps/gateway/src/ussd/perform.ts     their effects
+apps/gateway/src/smsin.ts            BON <code>
+apps/gateway/src/http.ts             the voucher page's two calls (read a locked token by the code's hash, report a redeem), rate-limited
+apps/gateway/src/main.ts             vouchers.sweep() on a timer, the evening summary on a timer
+apps/simulator or apps/voucher-web   the redeem page (gap 9: decide first)
 ```
 
-The first plan put this in `apps/escrow`. It is a module inside the gateway instead (decision 51): rule 52 says
-one process until sessions and the send queue move to the database.
+### The flows
 
-### The two flows
+Create (7, 1): amount, confirm, code. The vault moves the sats from `user:<id>` to `voucher:<voucherId>` with a P2PK
+lock to `voucherKey(code).pubHex`, the locktime 30 days out and the creator's refund key if probe 1 says the mint
+honours it. The row stores `voucherCodeHash(code)`, never the code. The code goes to the creator on the screen and
+by SMS (`sms.voucher_self`) and is then forgotten by the gateway.
 
-Cash-in (the user buys sats with francs):
+Send to a number with no account (2, number, amount): `send.confirm_voucher` instead of a refusal. The same create,
+then `sms.voucher_to` to that number. This is the first SMS to a number that has not asked for anything (rule 50
+says a number with no account gets no reply). Cap it: one voucher to a new number per sender per day, and the
+first-payment limit applies. Write the test for the cap before the code.
 
-1. User: 5, amount in FCFA, picks an agent from a short list (name, method, sats they will get). Confirm. No code: nothing of the user's moves.
-2. The engine draws a random preimage, seals it in the trade row, and makes a hold invoice for its hash on the gateway's node. It asks the agent's wallet to pay it and does not wait for that call to return. The trade is `open`.
-3. The node reports the invoice `accepted`: the trade is `held`. SMS to the user with the agent's mobile-money number, name, amount and reference (`sms.dep_user`). SMS to the agent (`sms.dep_agent`).
-4. The user sends francs outside Melax.
-5. Agent desk: "did you receive X from 77*****67?" Yes, then the agent's code. The engine settles the invoice with the preimage, then credits the user the way `Wallet.deposit` does, under the flow name `cashin`. History rows and SMS for both sides come from the settle handler. The trade is `done`.
-6. No confirmation 45 minutes after `held`: the engine cancels the invoice, the agent's sats return, both get an SMS. `expired`.
+Redeem by USSD (7, 2, code) or SMS (`BON <code>`): normalise the code (typos are caught by the check character
+before any lookup), find the voucher by its hash, derive the key, `Vault.transfer` from `voucher:<id>` to the
+redeemer with `privkey`. One redeem wins; the second gets `vch.gone`. Every attempt counts toward a per-number and a
+global rate limit, because the check character makes a random code fail fast but a stolen list of hashes does not
+exist and must not be needed.
 
-Cash-out (the user sells sats for francs):
+Redeem on the page: the page asks the gateway for the locked token by the code's hash (never the code), derives the
+key in the browser, and either swaps at the mint itself or hands the signed proofs back. Probe 3 decides which.
+`Vault.writeOffSpent` notices a voucher spent outside and closes it.
 
-1. User: 6, amount, agent, confirm, code. The limits apply: this is a spend.
-2. `vault.transfer` moves the sats from `user:<id>` to `escrow:<tradeId>`. The trade is `locked`. SMS to the agent with the user's number, name and amount (`sms.wd_agent`).
-3. The agent sends francs outside Melax, then marks it sent on the desk. `sent`. SMS to the user (`sms.wd_user_sent`).
-4. User: 6 shows the open trade (`wd.pending`). "Yes, received", then the code. The engine asks the agent's wallet for an invoice and calls `vault.melt` from `escrow:<tradeId>`. `done` when the melt settles.
-5. The agent never marks it sent within 45 minutes, or declines: the sats go back to the user. `refunded`.
-6. The agent marked it sent and the user does not confirm within 45 minutes: nobody can be believed without a look. The trade becomes `disputed`.
+Refund: after the locktime, the sweep moves an unredeemed voucher back to its creator (`sms.voucher_refund`).
 
-Rules both flows keep:
-
-- One open trade per user. An agent's open cash-ins can never add up to more than the agent's bond.
-- Every money step has its own idempotency key built from the trade id (`cashin:<id>:credit`, `cashout:<id>:lock`, `cashout:<id>:pay:<n>`, `slash:<id>`).
-- The state machine in `trade.ts` is the only place that says which move is allowed. The engine applies a move with `UPDATE trades SET state = $new WHERE id = $id AND state = $old` and checks one row changed. Whoever loses that race does nothing.
-- The preimage leaves the database in one place: the function that settles.
-- Rule 15: a cancelled trade's invoice is watched until it expires, and a payment that arrives late is cancelled on sight. `sweep()` does this.
-
-### Bonds and disputes
-
-- An agent's bond is ecash under the vault owner `bond:<agentUserId>`. The agent moves it there from their own balance on the desk, with their code. It cannot be taken back while a trade or a dispute of theirs is open.
-- A dispute on a cash-out is simple: the sats are in `escrow:<tradeId>` and stay there until someone decides.
-- A dispute on a cash-in cannot keep a Lightning payment locked for a day. So: while the payment is still held, a decision for the user settles it. When the hard cap is reached first, the engine cancels the invoice, the agent gets the sats back, and a later decision for the user is paid out of the agent's bond (`vault.transfer` from `bond:<agent>` to the user). This is why open cash-ins are capped by the bond.
-- `Escrow.decide({ tradeId, winner, arbiter, note })` does the money and writes one `audit_log` row. It is reached through `POST /ops/escrow/decide` behind `OPERATOR_SECRET` (rule 49), and through `POST /sim/decide` in demo mode. The console in phase 11 calls the same function. The plan calls the decision "a signed ledger event". Signing comes with the Nostr keys in phase 10. Until then call it recorded, not signed.
-
-### The agent's wallet
-
-The engine needs two things from an agent's wallet: pay this invoice, and give me an invoice. That is a
-`LightningBackend`. On regtest the seeded agents use the world node. A real agent links a wallet by Nostr Wallet
-Connect, and its connection string is sealed in the `agents` row with its own purpose tag.
-
-The NWC sandbox and our regtest mint are on different networks. A sandbox wallet cannot pay the regtest mint, so
-a whole cash-in with ecash cannot run on the sandbox. What can: the Lightning leg of the escrow (open, wait for
-`accepted`, settle, cancel, and the late payment of rule 15) with the gateway's side on `NwcBackend`. Test the
-leg on both backends and the whole flow on regtest. Do not write that both flows pass on the sandbox.
+Pay a shop (4, merchant code, amount): the shop's name on the confirm screen, then the code, then a send to the
+merchant's account the way `Wallet.send` does it, with `sms.merchant_paid` to the shop and the receipt to the
+customer. A merchant's evening summary at 20:00 Dakar time (`sms.merchant_summary`), once a day, from the history.
 
 ### Tests to write first
 
-Unit (`apps/gateway/test/escrow.test.ts`, more cases in `machine.test.ts`, new golden files in three languages):
-- the trade machine: for every state and every event, the move is in the table or it is refused. Nothing leaves `done`, `expired`, `refunded` or a decided dispute;
-- starting is refused when: the amount is outside the agent's range, the agent is off, the agent is the user, the user already has an open trade, the agent's open cash-ins plus this one pass the bond, no agent fits (`agents.none`);
-- a cash-out start is refused over a limit and over the balance, and counts toward the day's limit from the moment it locks. A refund gives the room back;
-- only the trade's agent can confirm, decline or mark sent, and only with their code. Only the trade's user can confirm a cash-out, and only with theirs;
-- the desk is not in the menu of someone who is not an agent;
-- every new code prompt is in `PIN_STEPS`, and the existing "never resumes at a code prompt" and "no state holds a code" lists include the new flows;
-- `/ops/escrow/decide` does not exist without its secret, and a wrong secret looks like a missing path;
-- the mobile-money number of an agent and the number of a user are sealed in the database and in no log.
+Unit: the voucher state machine like `trade.test.ts`; a code with a typo is refused before any database read; a code
+is in no log, no row and no `/sim/state` (add its pattern to the log tests; `redact` already has one, check it); the
+redeem rate limits; a voucher to a new number is capped; the merchant code is refused when it is not 5 digits or
+unknown, before the amount is asked; the new code prompts in `PIN_STEPS` and in the two lists of `machine.test.ts`;
+golden files for flows 4 and 7 in three languages.
 
-Integration (`apps/gateway/test/escrow.itest.ts`, real mint and nodes, the agent's wallet is the world node):
-- cash-in: while `held`, the world node is down by the amount and `float:node` is unchanged. After the agent confirms, the user holds that much ecash, both histories and both SMS exist, `expectConsistent()`;
-- cash-in times out: every sat is back on the world node (`quietBalance`), the user has nothing, both got the SMS;
-- confirm and time-out at the same moment, many times over: exactly one wins, and the books are consistent either way;
-- the process dies after the agent's confirmation is stored and before the node settled: a restart settles and credits once;
-- the mint's reply is lost while crediting: recovery credits once;
-- a late payment to a cancelled trade is cancelled on sight;
-- cash-out: sats leave the user for `escrow:<id>`, the agent marks sent, the user confirms, the world node receives. The fee comes out of the locked amount, what is left returns to the user, and `escrow:<id>` ends at zero;
-- cash-out refunded after 45 minutes with no "sent": the user has every sat back;
-- cash-out, the pay-out fails: nothing is lost, the trade can be paid again with a fresh invoice;
-- a cash-out dispute decided each way; a cash-in dispute decided for the user while held (settles) and after the hard cap (paid from the bond, bond reduced);
-- a bond cannot be withdrawn with a trade open;
-- a random run: starts, confirmations, cancellations and clock jumps in any order over many trades end with `expectConsistent()` and no closed trade's escrow account above zero;
-- the logs of the whole file hold no number, code, name, invoice or preimage.
+Integration (`apps/gateway/test/vouchers.itest.ts`): create then redeem by USSD, by SMS and through the page's two
+calls, each ending with `expectConsistent()`; two redeems of one voucher at the same moment, from two processes:
+one wins; a voucher redeemed in another wallet is written off; a voucher past its locktime goes back to its creator,
+once; the mint's reply lost during a redeem; a send to a number with no account becomes a voucher and that number
+can open an account and redeem it; a payment to a shop with both receipts; the evening summary is sent once a day.
 
-On the NWC sandbox (`escrow.nwc.itest.ts`): the escrow's Lightning leg, including rule 15.
+End to end (`e2e/vouchers.spec.ts`): a visitor makes a voucher on one phone and redeems it on the other. A customer
+pays a seeded shop.
 
-End to end (`e2e/agents.spec.ts`): a visitor's phone starts a cash-in with a seeded agent, the agent's phone confirms it, the visitor's SMS and balance show it.
-
-Add to `scripts/mutate.mjs`: the bond cap, the agent's code on a confirmation, the state check in the `UPDATE`, the user's code on a cash-out confirmation.
+Add to `scripts/mutate.mjs`: the redeem rate limit, the check that the voucher is not already spent, the cap on
+vouchers to new numbers, the code check on a shop payment.
 
 ### Not in this phase
 
-Publishing offers on Nostr and ratings (phase 10). The operator console (phase 11). Automatic confirmation
-through a mobile-money API (phase 15). A separate web page for agents: the desk in the menu and the second phone
-of the simulator cover it, and the page can come with the console.
+Paper vouchers printed by agents. Publishing vouchers to Nostr (phase 10). Offline acceptance by a merchant's web
+app: the first plan caps it at 2,000 F because a double spend cannot be ruled out offline. It needs its own page
+with cached mint keys; build it only if the owner wants it before phase 13, and say so in the report. Auto cash-out
+of a merchant's day to an agent.
 
 ### Done when
 
-Both flows run between two phones in the simulator. `npm test`, `npm run test:int` and `npm run test:e2e` pass,
+Flows 4 and 7 run between two phones in the simulator. `npm test`, `npm run test:int` and `npm run test:e2e` pass,
 the gateway tests pass with `TEST_DATABASE_URL`, `npm run typecheck` and `npm run lint` are clean, and
 `node scripts/mutate.mjs` catches every line. The probe's numbers are in the build log. The items in section 1
-point 5 are updated, and section 3 holds the brief for phase 7.
+point 5 are updated, and section 3 holds the brief for phase 8.
 
-### What phase 5 handed over
+### What phase 6 handed over
 
-`docker compose up`, then `http://localhost:8787`: a landing page, and at `/demo` two phones that dial the real
-gateway, with a four-step guide, the SMS of each phone and the books. What exists:
+Cash-in and cash-out through an agent, with the agent's sats held in a Lightning payment during a cash-in and the
+user's ecash in `escrow:<tradeId>` during a cash-out. Bonds, disputes, the arbiter's route. Two seeded agents
+(Ndeye on Wave, Ousmane on Orange Money) whose wallet is the regtest world node. On the demo page the second phone
+can be an agent's, and a two-step walk-through follows the cash-in from the SMS.
 
-- `Wallet.deposit` and its settle handler: the way sats that arrived on the gateway's node become a user's ecash.
-- `apps/gateway/src/demo.ts`, `static.ts`, `boot.ts`. Routes `GET /sim/sms`, `GET /sim/people`, `GET /sim/state`, `POST /sim/fund`, and the pages, all in demo mode only.
-- `apps/simulator`: the two pages and their words in three languages.
-- The `app` service. A clean start took 126 s and stopping it took half a second, exit code 0.
-- `e2e/demo.spec.ts`: 10 browser tests. `scripts/stills.mjs` for looking at the pages.
+- `apps/gateway/src/escrow/`: `trade.ts`, `agents.ts`, `engine.ts`. Migration `gateway/002-agents`.
+- `POST /ops/escrow/decide` behind `OPERATOR_SECRET`, `POST /sim/decide` in demo mode.
+- `ESCROW_CLTV_BLOCKS` and `ESCROW_BLOCK_SECONDS`, checked against the 3 hour cap at start. 432 and 30 on the stack.
+- `scripts/probe/hold-cltv-probe.ts` and its numbers in the build log.
 
 Gaps that are known and not closed. Do not describe any of these as done:
 
-1. The demo routes have no rate limit. A hosted demo needs one first (phase 13).
-2. A deposit whose payment to the mint fails for good is logged and not retried. The sats stay in `float:node`. Phase 8 must close this before real invoices arrive, and phase 6 must not make it worse: a cash-in that reaches this state has already settled the agent's payment.
+1. The demo routes, `/sim/decide` among them, have no rate limit. A hosted demo needs one first (phase 13).
+2. A deposit through the top-up button whose payment to the mint fails for good is still not retried (phase 8). A cash-in's credit is retried under a new key (decision 59).
 3. The Lightning address on the screens is not payable until phase 8.
-4. A payment to a number with no account is refused until phase 7.
-5. Sessions and the per-user send queue live in the memory of one process. Phase 12.
-6. A send that runs past the step budget and is then refused sends no SMS. Phase 12.
-7. Nothing limits how many numbers one caller can look up on the send screen. Phase 9.
-8. All Wolof, in the menus and on the pages, is unreviewed.
-9. `static.ts` serves one folder. The voucher page (phase 7), the verify page (phase 10) and the console (phase 11) either become more pages of `apps/simulator` or get a second mount. Decide in phase 7 and write it down.
-10. The pages were opened in Chromium only.
-11. GitHub warns that `actions/checkout@v4` and `actions/setup-node@v4` were written for Node 20. The workflow was not touched in phase 5. The browser tests and the integration tests do not run in CI yet (phase 12).
+4. Sessions, the per-user send queue and the per-trade queue of the escrow live in the memory of one process. Phase 12. Trades between two processes were tested (the state check holds), but sends were not.
+5. A send that runs past the step budget and is then refused sends no SMS. Phase 12.
+6. Nothing limits how many numbers one caller can look up on the send screen. Phase 9.
+7. All Wolof, in the menus and on the pages, is unreviewed.
+8. The pages were opened in Chromium only.
+9. `static.ts` serves one folder. The voucher page is the first page that is not the demo: decide in this phase whether it is a page of `apps/simulator` or its own app with a second mount, and write it down. It must be served outside demo mode, which nothing is today.
+10. Browser and integration tests do not run in CI (phase 12). GitHub warns that `actions/checkout@v4` and `actions/setup-node@v4` were written for Node 20.
+11. No decision of the arbiter is signed (phase 10). There is no console (phase 11): a decision is a call to `/ops/escrow/decide`.
+12. An agent's wallet linked by NWC was tested for the Lightning leg only, on the public sandbox. The whole trade runs on regtest with the world node as every agent's wallet.
+13. The engine refuses an invoice from the agent's wallet for another amount. No test sends such an invoice yet (phase 12).
+14. On regtest the helper mines six blocks at once when it opens a channel. A held cash-in can reach its block limit before the 3 hour cap when that happens; the engine then treats it as expired, or as released in a dispute.
+15. No francs move in the demo. The agent's confirmation is a button press.
+16. LND's `pay` answers "pending" for a payment it refuses for an over-long block delta (the probe's 2,100 blocks), instead of "failed". Safe, because a pending payment is looked up, but imprecise.
+17. The regtest mint logs a balance mismatch instead of stopping (decision 67). Its watchdog stopped it on a normal deposit. Phase 10's reserve check must count paid quotes not yet collected; a real deployment needs the question answered again.
 
 ## 4. Rules that keep the build from breaking
 
@@ -314,6 +294,21 @@ Each rule exists because something depends on it. The file or test that guards i
 67. Until cash-out exists, test money flows one way: world node, gateway node, mint. The regtest helper adds a channel when a side runs low. If top-ups start failing, run `node scripts/probe/balances.ts` first.
 68. A page is not done until its stills have been looked at: `node scripts/stills.mjs`, then open the files in `stills/` at 1440 and 360 px in each language. Sideways overflow is measured by element boxes (`sticksOut` in `e2e/demo.spec.ts`), because a page can hide it from `scrollWidth`.
 
+### Agents and the escrow (from phase 6)
+
+69. A trade's state changes only through `move()` in `apps/gateway/src/escrow/engine.ts`: the next state comes from `next()` in `escrow/trade.ts`, and the `UPDATE` carries `AND state = <the state it was read in>`. A move that changed no row lost a race and does nothing more. Nothing else writes `trades.state`. Guarded by `trade.test.ts` and "a move made from a stale read of a trade changes nothing" in `escrow.test.ts`.
+70. A cash-in's preimage is sealed under `trade:preimage:<id>` and opened in one function, `settleHeld()`. Never read it anywhere else, never log it.
+71. A cash-in is credited the way a deposit is (rule 55): the node says settled, for the trade's amount, `post()` under `recv:<paymentHash>`, then `Vault.mintFor` under `cashin:<id>:credit`. A failed credit is asked again under `cashin:<id>:credit:<n>`, never under the same key.
+72. The idempotency keys of a trade: `cashin:<id>:credit[:n]`, `slash:<id>[:n]`, `cashout:<id>:lock`, `cashout:<id>:pay:<n>`, `cashout:<id>:change[:n]`, `cashout:<id>:refund[:n]`. The settle flow names `cashin`, `slash`, `cashout_lock`, `cashout_pay`, `cashout_change`, `cashout_refund`, `bond_in` and `bond_out` are taken. History rows and SMS of a trade come from those handlers only.
+73. An agent's open cash-ins (`BONDED_STATES`: open, held, settling, disputed, released, bonding) never add up to more than the bond. The check runs inside the transaction that inserts the trade, after `Agents.lock()` on the agent's row. A bond is withdrawn whole, only with no open trade, and the offer is paused in the same transaction.
+74. A closed cash-in keeps `watch` until its invoice has expired. `watchStep()` cancels any payment held on it (rule 15). Do not clear `watch` anywhere else.
+75. `ESCROW_CLTV_BLOCKS` and `ESCROW_BLOCK_SECONDS` must hold a payment for the 3 hour cap plus 22 blocks, or `loadConfig` refuses to start. A new network sets both. The 22 is measured (`scripts/probe/hold-cltv-probe.ts`); re-measure on a new LND version.
+76. A cash-out is a spend: the code, then the limits through `Wallet.limitCheck` (first payment to the agent included), then the balance, all inside `Wallet.serial` for that user. Its history row has `spend` set from the moment it locks, and a refund writes a `+` row with `spend` set, which gives the room back.
+77. Log fields must not be named `event` (it overwrites the event's name), `from` or `to` (the logger hides them, phone numbers live there). Defect 42.
+78. The agent desk is shown only to a user whose role is `agent`, and every desk effect in `perform.ts` starts with `Agents.get()`. Somebody else's trade answers `NOT_FOUND`, the same as no trade.
+79. The demo's agents are the entries of `DEMO_PEOPLE` that carry `agent`. `seedDemo` never touches them; `seedAgents` adds whatever is missing on every start. Their wallet is the world node (`wallet_kind = 'world'`).
+80. An integration test that compares the world node's balance reads only the channels it had at the start (`worldChannels` in `escrow.itest.ts`): the regtest helper opens a channel from the world node whenever it runs low. Defect 41.
+
 ## 5. Code map
 
 | Path | What it is | Main exports | Tests |
@@ -321,7 +316,7 @@ Each rule exists because something depends on it. The file or test that guards i
 | `packages/core` | Errors, ids, clock, phone numbers, FCFA and sats, log redaction | `AppError`, `newId`, `FakeClock`, `normalizePhone`, `maskPhone`, `fcfaToSats`, `createLogger`, `redact` | `core.test.ts` |
 | `packages/crypto` | Wrappers over node:crypto | `hashPin`, `verifyPin`, `isWeakPin`, `seal`, `open`, `deriveUserKey`, `deriveKey`, `phoneLookupKey`, `newVoucherCode`, `normalizeVoucherCode`, `voucherKey`, `randomAlias` | `crypto.test.ts` |
 | `packages/ledger` | Database handle, migrations, the journal | `createPgDb`, `createMemoryDb`, `migrate`, `truncateAll`, `post`, `balance`, `allBalances`, `verifyLedger` | `ledger.test.ts` |
-| `packages/lightning` | One interface, two adapters, invoice checks | `LightningBackend`, `LndBackend`, `NwcBackend`, `decodeInvoice`, `checkInvoice`, `feeCapSat` | `invoice.test.ts`, `contract.ts` run by `lnd.itest.ts` and `nwc.itest.ts` |
+| `packages/lightning` | One interface, two adapters, invoice checks | `LightningBackend` (`makeHoldInvoice` takes `cltvExpiry`, LND only), `LndBackend`, `NwcBackend`, `decodeInvoice`, `checkInvoice`, `feeCapSat` | `invoice.test.ts`, `contract.ts` run by `lnd.itest.ts` and `nwc.itest.ts` |
 | `packages/cashu` | Mint client: plan, run, recover | `MintClient` (`planSwap`, `runSwap`, `recoverSwap`, `mintQuote`, `planMint`, `runMint`, `recoverMint`, `meltQuote`, `planMelt`, `runMelt`, `checkMelt`, `states`, `encodeToken`, `decodeToken`, `verifyOffline`) | `mint.itest.ts` |
 | `packages/vault` | Sealed proofs plus ledger plus recovery | `Vault` (`mintFor`, `transfer`, `exportToken`, `importToken`, `melt`, `writeOffSpent`, `findOp`, `resume`, `recover`, `audit`, `auditAll`, `liveProofs`, `verifyHoldingsWithMint`, `onSettled`), `vaultMigrations`, `FLOAT_NODE` | `vault.itest.ts` |
 | `packages/limits` | Spend tiers, PIN lockout, delays | `TIERS`, `tierFor`, `checkSpend`, `onPinFailure`, `onPinSuccess`, `isPinLocked`, `withdrawalDelayMs` | `limits.test.ts` |
@@ -329,27 +324,30 @@ Each rule exists because something depends on it. The file or test that guards i
 | `packages/ussd` | Menu SDK | `con`, `end`, `menu`, `Machine`, `UssdRuntime`, `MemorySessions`, `africasTalking`, `genericHttp`, `simulator` | `ussd.test.ts` |
 | `packages/i18n` | Wording | `t`, `clip`, `messages`, `LANGS`, `methodName`, `WOLOF_REVIEWED` | `i18n.test.ts` |
 | `packages/nostr`, `packages/fiat-rails` | Empty. Phases 10 and 15 | | |
-| `apps/gateway/src/config.ts` | The environment, checked once | `loadConfig`, `Config` | `config.test.ts` |
-| `apps/gateway/src/schema.ts` | Tables: `users`, `txlog`, `sms_outbox`, `price_cache`, `audit_log`, `flags`, sequence `receipt_no` | `gatewayMigrations` | every gateway test |
+| `apps/gateway/src/config.ts` | The environment, checked once. Refuses an escrow block delta that cannot cover the 3 hour cap | `loadConfig`, `Config`, `ESCROW_HARD_CAP_SEC`, `ESCROW_LND_MARGIN_BLOCKS` | `config.test.ts` |
+| `apps/gateway/src/schema.ts` | Tables: `users`, `txlog`, `sms_outbox`, `price_cache`, `audit_log`, `flags`, sequence `receipt_no`; from `gateway/002-agents`: `agents`, `trades` | `gatewayMigrations` | every gateway test |
 | `apps/gateway/src/rules.ts` | What a first name and an address name may look like | `NAME_RE`, `ALIAS_RE`, `isReservedAlias` | `users.test.ts`, `machine.test.ts` |
 | `apps/gateway/src/users.ts` | Accounts and the secret code | `Users` (`register`, `findByPhone`, `byId`, `phoneOf`, `addressOf`, `checkPin`, `changePin`, `setLang`, `setAlias`) | `users.test.ts` |
 | `apps/gateway/src/rates.ts` | FCFA per bitcoin, cached | `Rates.get`, `RATE_URL` | `rates.test.ts` |
 | `apps/gateway/src/smsout.ts` | SMS outbox, sealed, retried | `SmsOutbox` (`queue`, `flush`, `list`) | `smsout.test.ts` |
 | `apps/gateway/src/smsin.ts` | Inbound SMS commands | `SmsInbound.handle` | `http.test.ts` |
 | `apps/gateway/src/settle.ts` | Routes the vault's settle hook by flow | `SettleRouter` (`on`, `dispatch`) | `wallet.itest.ts` |
-| `apps/gateway/src/wallet.ts` | Balance, resolve, quote, send, deposit, history, limits. Writes history and receipts when a send or a deposit settles | `Wallet` | `wallet.itest.ts`, `perform.test.ts`, `demo.test.ts`, `demo.itest.ts` |
+| `apps/gateway/src/wallet.ts` | Balance, resolve, quote, send, deposit, history, limits. Writes history and receipts when a send or a deposit settles | `Wallet` (`limitCheck`, `serial` and `text` are also used by the escrow) | `wallet.itest.ts`, `perform.test.ts`, `demo.test.ts`, `demo.itest.ts` |
 | `apps/gateway/src/ussd/machine.ts` | The menus as a pure machine | `createWalletMachine`, `runtimeTexts`, `PIN_STEPS`, types `S`, `Effect`, `Res` | `machine.test.ts`, `test/golden/` |
 | `apps/gateway/src/ussd/perform.ts` | Runs effects by calling the services | `createPerform` | `perform.test.ts`, `wallet.itest.ts` |
-| `apps/gateway/src/http.ts` | Fastify routes | `buildHttp` | `http.test.ts`, `wallet.itest.ts` |
+| `apps/gateway/src/http.ts` | Fastify routes, `/ops/escrow/decide` when `OPERATOR_SECRET` is set | `buildHttp` | `http.test.ts`, `wallet.itest.ts` |
 | `apps/gateway/src/app.ts` | Wires everything from injected parts | `buildApp`, `App` | all, through `test/helpers.ts` |
 | `apps/gateway/src/boot.ts` | Connects everything and returns an `App`. Opens no port | `boot` | every start of the `app` service |
-| `apps/gateway/src/main.ts` | The server: boot, recover, seed if asked, listen, timers, clean stop | | `docker compose up`, `docker compose stop app` (timed in the build log) |
-| `apps/gateway/src/demo.ts` | Demo mode only: `/sim/*` routes, the top-up, the seed | `mountDemo`, `fundAccount`, `seedDemo`, `regtestWorld`, `DEMO_PEOPLE`, `DEMO_PIN`, `FUND_CAP_FCFA` | `demo.test.ts`, `demo.itest.ts` |
+| `apps/gateway/src/main.ts` | The server: boot, recover, sweep the trades, seed if asked (people, then agents), listen, timers (recover, SMS, escrow sweep every 5 s), the node's invoice stream, clean stop | | `docker compose up`, `docker compose stop app` (timed in the build log) |
+| `apps/gateway/src/demo.ts` | Demo mode only: `/sim/*` routes (`/sim/decide` among them), the top-up, the seed, the two agents | `mountDemo`, `fundAccount`, `seedDemo`, `seedAgents`, `regtestWorld`, `DEMO_PEOPLE`, `DEMO_AGENT_RANGE`, `DEMO_PIN`, `FUND_CAP_FCFA` | `demo.test.ts`, `demo.itest.ts` |
+| `apps/gateway/src/escrow/trade.ts` | The trade state machine, pure | `next`, `STATES`, `EVENTS`, `TERMINAL`, `OPEN_STATES`, `BONDED_STATES`, `ACTORS` | `trade.test.ts` |
+| `apps/gateway/src/escrow/agents.ts` | Agents: offer, sealed mobile-money number, wallet, bond balance, prices | `Agents` (`enroll`, `get`, `lock`, `momoOf`, `wallet`, `setActive`, `bondSats`, `bondedSats`, `active`, `close`), `cashinSats`, `cashoutSats`, `bondOwner`, `METHODS` | `escrow.test.ts`, `escrow.itest.ts` |
+| `apps/gateway/src/escrow/engine.ts` | Cash-in, cash-out, disputes, bonds, the sweep | `Escrow` (`offers`, `startCashin`, `startCashout`, `agentConfirm`, `agentDecline`, `agentSent`, `userConfirm`, `cancel`, `dispute`, `decide`, `bondAdd`, `bondOut`, `openTradeOf`, `nextFor`, `deskCounts`, `agentNumberFor`, `userNumberFor`, `get`, `byRef`, `step`, `sweep`, `watchInvoices`, `escrowBalance`), `WINDOW_MS`, `HARD_CAP_MS`, `OPEN_TTL_MS` | `escrow.test.ts`, `escrow.itest.ts`, `escrow.nwc.itest.ts`, `e2e/agents.spec.ts` |
 | `apps/gateway/src/static.ts` | The built pages, served from memory | `loadStatic`, `mountStatic` | `demo.test.ts` |
 | `apps/simulator` | Landing page (`index.html`) and simulator (`demo.html`). `src/copy.ts` words, `src/lang.ts` language switch, `src/api.ts` the five calls, `src/phone.ts` one phone, `src/demo.ts` the guide, the inboxes and the books, `src/landing.ts`, four CSS files | built into `dist/` by `npm run build:web` | `test/copy.test.ts`, `e2e/demo.spec.ts` |
-| `e2e/`, `playwright.config.ts` | Browser tests against the running stack | | `npm run test:e2e` |
+| `e2e/`, `playwright.config.ts` | Browser tests against the running stack: `demo.spec.ts`, `agents.spec.ts` | | `npm run test:e2e` |
 | `infra/` | `compose.yml` (gateway side), `compose.mint.yml` (mint side), `compose.regtest.yml` (test chain), `regtest-init/init.ts` | | `scripts/smoke.ts` |
-| `scripts/` | `smoke.ts`, `dev-creds.sh`, `build-web.mjs`, `mutate.mjs`, `demo-seed.ts`, `stills.mjs`, `probe/` (`balances.ts` shows what each node can send) | | |
+| `scripts/` | `smoke.ts`, `dev-creds.sh`, `build-web.mjs`, `mutate.mjs`, `demo-seed.ts`, `stills.mjs`, `probe/` (`balances.ts` shows what each node can send; `hold-cltv-probe.ts` measures how long LND holds a payment) | | |
 | `eslint.config.js`, `.github/workflows/ci.yml` | Lint rules. Type check, lint and unit tests on every push | | |
 | `docs/threat-model.md` | Each threat, its control, and the test that shows it | | |
 
@@ -394,7 +392,9 @@ curl -s -X POST localhost:8787/ussd/sim -H 'content-type: application/json' \
 Every variable is listed with its rule in `apps/gateway/src/config.ts`. The ones that matter: `DATABASE_URL`,
 `MINT_URL`, `LND_REST_URL`, `LND_MACAROON_PATH`, `LND_TLS_CERT_PATH` (defaults fit the stack and `.keys/`),
 `USSD_CODE`, `ADDRESS_DOMAIN`, `RATE_FIXED_XOF_PER_BTC` (unset means the live rate), `AT_SECRET` with
-`AT_ALLOW_IPS`, `USSD_HTTP_SECRET`, `SMS_ADAPTER` with its keys, `ASG_SIGNING_KEY`, `HTTPSMS_SIGNING_KEY`.
+`AT_ALLOW_IPS`, `USSD_HTTP_SECRET`, `SMS_ADAPTER` with its keys, `ASG_SIGNING_KEY`, `HTTPSMS_SIGNING_KEY`,
+`OPERATOR_SECRET` (mounts the arbiter's route), `ESCROW_CLTV_BLOCKS` with `ESCROW_BLOCK_SECONDS` (on the local chain
+432 and 30, as `compose.yaml` sets them; a gateway started by hand against the stack needs both, or it refuses).
 On Windows, stop the server with Task Manager or `taskkill`: a signal sent from Git Bash does not reach it.
 
 Host ports, all on 127.0.0.1: gateway and pages 8787, mint 3338, Postgres 54329, LND REST gateway 18081, world 18082, mint node 18083, relay 7447, bitcoind RPC 18443.
@@ -414,9 +414,9 @@ The build machine's Docker has 3.1 GB of RAM and 2 CPUs. Keep the stack under ab
 
 Each gets a full "next phase in detail" section, like section 3, written when the phase before it ends.
 
-**Phase 6, agents.** Now section 3.
+**Phase 6, agents.** Done. Its brief is in git history (`docs/PLAN.md` at commit `db23379`), its record in the build log.
 
-**Phase 7, vouchers and merchants.** Voucher = `vault.transfer` to `voucher:<id>` with a P2PK lock to the key derived from the code (`voucherKey`), locktime 30 days, refund key per voucher. Redeem by USSD, by SMS `BON <code>`, and on `apps/voucher-web` where the browser derives the key and swaps at the mint. Sweepers for refunds and for vouchers redeemed elsewhere (`writeOffSpent`). Sending to a number that has no account becomes an SMS voucher. Merchant code, poster with QR and dial string, receipts to both sides, evening summary. Offline acceptance capped at 2,000 FCFA.
+**Phase 7, vouchers and merchants.** Now section 3.
 
 **Phase 8, Lightning address and pay codes.** `apps/lnurl`: `/.well-known/lnurlp/<alias>`, description-hash invoices on the gateway node, settle listener that credits through `vault.mintFor`. Pay codes (6 digits, 10 minutes) so a USSD user can pay any invoice. Resolver for outgoing addresses that refuses private ranges and redirects. Moving to a smartphone: sweep to an address, or a voucher for the full balance. Rule 12 is decided here.
 
@@ -476,6 +476,11 @@ What Railway changes, read from its docs on 15 Nov 2026 (`docs.railway.com/guide
 | `apps/escrow` as its own app | A module inside the gateway (phase 6) | One process until sessions and the send queue move to the database |
 | Both agent flows pass on the NWC sandbox | The Lightning leg of the escrow is tested on the sandbox, the whole flow on regtest | A sandbox wallet cannot pay the regtest mint |
 | Disputes are decided within 24 hours while the payment stays locked | A cash-in dispute outlives its Lightning payment: the invoice is cancelled at the 3 hour cap and a decision for the user is paid from the agent's bond | A Lightning payment cannot be held for a day |
+| Escrow window 45 min, hard cap 3 h, as plain numbers | The block delta of the hold invoice is a setting, checked at start against the cap | LND's default held a payment 32.5 minutes on the 30 s test chain. Measured in phase 6 (decision 52) |
+| The cash-out pays "the agent's Lightning address" | The engine asks the agent's wallet (a `LightningBackend`) for an invoice of exactly the trade's sats | One interface for the regtest node and for an NWC wallet; no address resolver before phase 8 |
+| Agent bond tiers set trade sizes | Each agent has a range in francs; the bond caps the sum of open cash-ins | A tier table is a decision for the console (phase 11); the cap is what protects users now |
+| Both sides submit the mobile-money reference in a dispute | The user opens a dispute from the menu; the reference is given to the arbiter outside Melax (the SMS says to keep it) | A 160 character screen is a poor place to type a transfer reference. The console can take it |
+| Agent web app for confirming | The desk in the menu (0, 4) | Same as the brief: the page can come with the console |
 
 The design the build follows is below, kept from the first plan and corrected where the table above says so.
 

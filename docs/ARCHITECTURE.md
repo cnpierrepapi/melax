@@ -54,8 +54,11 @@ Inside `apps/gateway/src`:
 | `http.ts` | The routes aggregators and phone gateways call. Each one mounts only when its secret is set |
 | `app.ts` | Builds all of the above from injected parts, so tests can swap the database, clock, SMS adapter and log |
 | `boot.ts` | Connects the database, the mint, the Lightning node, the SMS adapter and, in a regtest demo, the node that pays top-ups. Opens no port, so a script can use it |
-| `main.ts` | The server: boot, finish what a previous run left open, seed the demo if asked, listen, start two timers, stop cleanly on a signal |
-| `demo.ts` | Demo mode only: what the simulator reads, the top-up, the seed. Shows first names, never an id, a number or ecash |
+| `main.ts` | The server: boot, finish what a previous run left open (vault operations, then trades), seed the demo if asked, listen, start three timers, stop cleanly on a signal |
+| `demo.ts` | Demo mode only: what the simulator reads, the top-up, the seed, the two seeded agents, the arbiter's demo button `/sim/decide`. Shows first names, never an id, a number or ecash |
+| `escrow/trade.ts` | The trade state machine, pure: kind, state and event in, the next state or a refusal out. Who may cause each event |
+| `escrow/agents.ts` | Agents: enrol, the offer, the sealed mobile-money number, the agent's wallet (a `LightningBackend`), the bond's balance and what leans on it. Prices with the premium |
+| `escrow/engine.ts` | `Escrow`: starts both kinds of trade, the people's moves (confirm, decline, mark sent, dispute, cancel), the arbiter's `decide`, bonds, and `sweep`/`step`, which move trades on the clock and on the node's word. Every move is a state-checked `UPDATE`. History and SMS come from its settle handlers |
 | `static.ts` | The built pages, read once into memory. No request path reaches the disk |
 
 ## The data that flows
@@ -67,8 +70,11 @@ Inside `apps/gateway/src`:
 - `users` row (`apps/gateway/src/schema.ts`): id, the number as an HMAC and as a sealed copy, a masked form for screens, first name, address name, language, role, the code's Argon2id hash, the wrong-try counter and lock time, the freeze time.
 - `txlog` row: one side of a movement as the user reads it: signed sats and francs, the other party's first name, the receipt number, the vault operation it came from, and whether it counts toward the limits.
 - `sms_outbox` row: the number and the text, both sealed, with a status and a retry time.
+- `agents` row (migration `gateway/002-agents`): the user id, the mobile-money number sealed (purpose `agent:momo:<id>`) and masked, the method, the premium in basis points, the range in francs, on or off, and the wallet: `world` (the demo node) or `nwc` with its connection string sealed (`agent:wallet:<id>`).
+- `trades` row (same migration): kind, state, reference, idempotency key, the user and the agent, francs, sats, sats locked, the rate, the method; for a cash-in the payment hash, the preimage sealed (`trade:preimage:<id>`), the invoice and its expiry; the times `held_at`, `deadline_at`, `hard_cap_at`; the retry counter `attempt`; `watch` for a closed cash-in whose invoice is still watched; the winner of a decided dispute. A partial unique index allows one open trade per user.
+- Vault owners added by this phase: `escrow:<tradeId>` (a cash-out's locked sats) and `bond:<agentUserId>`.
 - Menu state `S` (`ussd/machine.ts`): `{ at, lang, profile, v, q }`. `at` is the step, `v` what was typed so far, `q` the inputs still queued from a dial string.
-- `Effect` and `Res`: what the machine asks for (`profile`, `register`, `balance`, `resolve`, `quote`, `send`, `receiveInfo`, `receiveSms`, `history`, `pinChange`, `setLang`, `address`, `setAlias`, `limits`) and the one shape every answer has: `{ ok: true, ... }` or `{ ok: false, err, ... }`.
+- `Effect` and `Res`: what the machine asks for (`profile`, `register`, `balance`, `resolve`, `quote`, `send`, `receiveInfo`, `receiveSms`, `history`, `pinChange`, `setLang`, `address`, `setAlias`, `limits`, and for agents `trade`, `offers`, `cashin`, `cashout`, `tradeConfirm`, `dispute`, `tradeCancel`, `desk`, `deskNext`, `deskAct`, `bond`, `bondAdd`, `bondOut`, `offer`, `offerToggle`) and the one shape every answer has: `{ ok: true, ... }` or `{ ok: false, err, ... }`.
 
 ## Walkthrough 1: sats arrive and become a user's ecash
 
@@ -137,6 +143,35 @@ Someone opens `http://localhost:8787/demo` on a phone.
 
 When the stack starts with `DEMO_SEED=1` on an empty database, `seedDemo()` runs steps 5 and walkthrough 4's send
 for six people before the port opens, so the first visitor already has someone to pay.
+
+## Walkthrough 6: a cash-in through an agent
+
+Awa presses 5 and types 2000.
+
+1. The `offers` effect calls `Escrow.offers("cashin", awa, 2000)`. It walks `Agents.active()`, skips Awa herself and anyone whose range does not fit, prices each with `cashinSats()` (the francs' worth less the premium) and drops anyone whose `bondedSats()` plus these sats would pass `bondSats()`. Three at most go on the screen.
+2. Awa picks Ndeye and confirms. No code: nothing of hers moves. `Escrow.startCashin()` checks the sats on the screen against the rate again (rule 53), draws a random preimage, and in one transaction locks Ndeye's `agents` row, checks Awa has no open trade and the bond still covers it, and inserts the trade as `open` with the preimage sealed.
+3. Then the network: `LndBackend.makeHoldInvoice()` on the gateway's node with `cltvExpiry` from `ESCROW_CLTV_BLOCKS`, and `Agents.wallet(ndeye).pay()`, not awaited: a held payment only returns when it is settled or cancelled.
+4. `step()` asks `lookupInvoice()`. Once the node says `accepted`, `openStep()` moves the trade to `held` and queues two SMS in the same transaction: Ndeye's mobile-money number for Awa (`sms.dep_user`), Awa's masked number for Ndeye (`sms.dep_agent`). The start waits up to 6 s for this, so Awa's screen can already say where to send the francs.
+5. Ndeye presses 0, 4, 1, sees the trade (`Escrow.nextFor()`), presses 1 and types her code. `Escrow.agentConfirm()` checks it is her trade, checks her code with `Users.checkPin()`, then moves `held` to `settling`.
+6. `creditStep()` calls `settleHeld()`, the one place the preimage is opened, and `LightningBackend.settle()`. Then it is a deposit (rule 55): the node says settled, `post()` books `recv:<hash>`, and `Vault.mintFor()` turns the sats into Awa's ecash under `cashin:<id>:credit`.
+7. The vault's settle hook reaches `onCredited()` through `SettleRouter`. In the transaction that adds Awa's proofs it moves the trade to `done`, writes a history row for each side under one receipt number, and queues `sms.dep_done` and `sms.dep_agent_done`.
+
+If Ndeye never confirms, `heldStep()` moves the trade to `expired` once 45 minutes have passed and cancels the
+invoice; her sats go back. If Awa disputes, `disputedStep()` lets go of the payment at the 3 hour cap (`released`),
+and a decision for Awa after that runs `slashStep()`: `Vault.transfer()` from `bond:<ndeye>` to Awa.
+
+## Walkthrough 7: a cash-out through an agent
+
+1. Awa presses 6, types 2000, picks Ndeye, confirms and types her code. `Escrow.startCashout()` checks the code, then inside `Wallet.serial()` (the same queue as her sends) the limits with `Wallet.limitCheck()` and the balance, and inserts the trade as `locking`. The sats locked are the sats plus `feeCapSat()` of them.
+2. `lockStep()` calls `Vault.transfer()` from `user:<awa>` to `escrow:<tradeId>` under `cashout:<id>:lock`. `onLocked()` moves the trade to `locked`, writes Awa's history row with `spend` set (it counts toward her limits from now), and texts Ndeye Awa's number.
+3. Ndeye sends the francs, then marks it sent with her code: `Escrow.agentSent()`. Awa gets `sms.wd_user_sent`.
+4. Awa presses 6, sees the trade, presses 1 and types her code: `Escrow.userConfirm()` moves it to `paying`.
+5. `payStep()` asks Ndeye's wallet for an invoice of exactly the trade's sats, checks the amount, and calls `Vault.melt()` from `escrow:<tradeId>` under `cashout:<id>:pay:<n>`. `onPaid()` moves the trade to `returning`. A failed melt leaves everything in the box and the next try uses `n + 1` and a fresh invoice.
+6. `changeStep()` moves whatever the fee did not use back to Awa (`cashout:<id>:change`) and `onChangeBack()` closes the trade with her SMS.
+
+With no "sent" for 45 minutes, or a decline, `refundStep()` moves the whole box back and `onRefunded()` writes a
+history row that gives the limit room back. With "sent" and then 45 minutes of silence from Awa, the trade becomes
+a dispute and waits for `Escrow.decide()`.
 
 ## Why it is built this way
 

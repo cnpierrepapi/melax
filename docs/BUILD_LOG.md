@@ -134,6 +134,65 @@ sitting on the yellow disc, and the apostrophe of "n'importe" running into the i
 Not done in this phase, and said so in `docs/status.md`: the demo routes have no rate limit, a deposit whose
 payment to the mint fails for good is not retried, and the pages were only opened in Chromium.
 
+### Phase 6: agents
+
+Money now comes in and goes out through a person. Press 5, pick an agent, and the agent's sats get locked in a
+Lightning payment while you send them francs. The agent confirms with their code, and the sats are yours. Press 6
+and it runs the other way: your sats wait in a box only the engine opens, the agent sends you francs, you confirm
+with your code, and the box pays the agent's wallet. Melax never touches a franc.
+
+First, the measurement the brief asked for. `scripts/probe/hold-cltv-probe.ts` holds real payments on our LND
+nodes and mines blocks until LND lets go:
+
+- With no block delta on the hold invoice (what the code sent before this phase), LND used its default of 80 and let go after 65 blocks. On our chain that is 32.5 minutes. The 45 minute window would never have held.
+- With a delta of 432 the world node still paid, and the payment stayed held for 360 blocks (the 3 hour cap at 30 s a block), then 54 more. LND let go 414 blocks in, 21 before the end.
+- With 2,100 the world node would not pay at all.
+- A held payment whose invoice expiry has passed is still held, and still settles.
+
+So the delta is a setting now, `ESCROW_CLTV_BLOCKS`, and the server refuses to start if it cannot cover the cap
+(defect 39, decision 52).
+
+What went in:
+
+- `apps/gateway/src/escrow/trade.ts`: the trade state machine. Pure. Every state against every event is in a test, and a second copy of the table written by hand checks the first.
+- `escrow/engine.ts`: both kinds of trade, the people's moves, disputes, the arbiter's `decide`, bonds, and a sweep that moves trades on the clock and on the node's word. Every move is an `UPDATE ... WHERE state = <the state it was read in>`.
+- `escrow/agents.ts`: the agent's offer, their mobile-money number sealed, their wallet, their bond.
+- Migration `gateway/002-agents`, menus 5 and 6, the agent desk at 0 then 4, the arbiter's route behind `OPERATOR_SECRET`, `/sim/decide` in the demo.
+- Two seeded agents, Ndeye on Wave and Ousmane on Orange Money, each with a bond. Their wallet is the world node.
+- On the demo page the second phone can be an agent's. Then a two-step walk-through takes the place of the four steps, ticked from the SMS.
+
+Tests came first: the trade table and the engine's refusals failed on a missing module, then on their assertions.
+The integration tests were written before the engine ran against the real nodes. On the file's first full run,
+18 of 19 passed; the one that failed was the log check (defect 42). The three on the NWC sandbox passed first
+time too. A pass on the first run proves little, so ten lines went into `scripts/mutate.mjs` and every one was caught.
+What the tests did find is in the defect table: 39 to 53. Two of them were real faults in the system and not in
+my tests: the block delta (39), and the mint stopping itself (52).
+
+The mint one deserves its own line. Nutshell's watchdog compares its node's balance with the ecash it issued,
+once a minute. A deposit is two calls, and a check that lands between them looks like money appeared, then
+vanished. It stopped the mint in the middle of a test run, and every restart tripped on the same stored reading.
+Nothing was wrong with the money. The regtest mint now logs that warning instead of stopping (decision 67), and
+the reserve check of phase 10 has to cover what the watchdog no longer does.
+
+Numbers from this machine, all from this session:
+
+- 350 unit tests in 105 s, 234 of them in the gateway (escrow 18, trade 7, the menus 113).
+- 101 integration tests in 491 s: escrow 19, the NWC sandbox 3, demo 8.
+- 12 browser tests in 24 s, against the stack after a clean start.
+- The gateway tests on Postgres 17: 234 unit and 45 integration, all passing, after fixing defect 53.
+- `node scripts/mutate.mjs`: 25 lines, 10 of them new. All caught.
+- A clean start, volumes deleted: `docker compose up -d --wait` returned after 123 s, with six funded people, two bonded agents and books that match at 282,500 sats.
+- Memory with everything up: about 787 MB across nine containers. The gateway takes 203 MB, the mint 176 MB.
+- Page weight, gzipped, with scripts and styles: 14.0 KB for the landing page, 18.5 KB for the simulator.
+
+Looking at the pages. Stills at 1440 and 360 px in each language, with an agent on the second phone. Fixed after
+looking: two "do this now" steps on screen at once, and the agent's label cut off in the picker on a small screen
+(defect 50).
+
+Not done in this phase, and said so in `docs/status.md`: no francs move in the demo, an NWC wallet was tested for
+the Lightning leg only, decisions are recorded but not signed, and there is no console. A test that sends a wrong
+invoice from the agent's wallet is left for phase 12.
+
 ## Defect log
 
 | # | What happened | Cause | Fix |
@@ -176,3 +235,18 @@ payment to the mint fails for good is not retried, and the pages were only opene
 | 36 | Found while writing the browser tests: after a closing screen, a pressed digit made the dial line "#2580#2", which the phone refuses. And the green key had to be pressed twice to dial again | The phone went back to its idle line, which already holds the code, and then added the digit. The green key only cleared the screen | The first digit after a closing screen only clears it. The green key dials again in one press |
 | 37 | The `app` service wrote a log line every 3 s | The health check called `/healthz` that often, forever | 2 s while starting, then every 30 s |
 | 38 | The session building this phase was cut off halfway, with nothing committed | A usage limit | The state went into the top of `docs/PLAN.md` as a list of what ran and what was left, and the next session finished from that list |
+| 39 | Found by the probe before any engine code: a held payment on our LND nodes is let go after 65 blocks. On the test chain that is 32.5 minutes, so the 45 minute cash-in window could never have held | `makeHoldInvoice` set no `cltv_expiry`, so LND used its default of 80 blocks, and the regtest helper mines a block every 30 s | `cltvExpiry` on the hold invoice from `ESCROW_CLTV_BLOCKS`, 432 on the stack (held 414 blocks in the probe), and `loadConfig` refuses a delta and a block time that cannot cover the 3 hour cap |
+| 40 | A unit test expected a first cash-out of 12,000 F to fail on the balance and it failed on the limits | The test was wrong. The limit check treats the agent as someone the user never paid, so the 10,000 F first-payment cap comes first | Kept the cap (decision 54) and fixed the numbers in the test |
+| 41 | An integration test saw the world node's balance jump by 5 million sats between two reads | The regtest helper had opened a new channel from the world node, which was running low. The test summed every channel | The tests read only the channels the world node had when the test began (`worldChannels`, rule 80) |
+| 42 | The log check found no `escrow.move` line though the engine wrote one per move | My field named `event` overwrote the line's own event name, and the logger hides fields named `from` and `to` | Renamed the fields `prev`, `on` and `next` (rule 77) |
+| 43 | With three long agent names, "Orange Money" and nine-digit sats, the agent list was 161 characters | Three lines of 43 characters plus the title and "0 Retour" | Names on that screen are cut at 9 characters (decision 64). Found by "the longest values a user can produce still fit on every screen" |
+| 44 | A menu test opened a dispute on a cash-in and got the cash-out's reference back | The test's stand-in answered every dispute with the cash-out trade | The stand-in answers with the trade that was named |
+| 45 | An integration test expected the agent's number as `776665544` and the screen said `77 666 55 44` | The test was wrong: `localPhone` writes numbers the way people in Senegal write them | Fixed the expected text, and the log check now also searches for the spaced form |
+| 46 | A one-line edit script in the shell broke on its quotes and wrote nothing | Backticks and quotes inside a double-quoted shell string (rule 31) | Made the edits with the editor |
+| 47 | The privacy test would have checked no preimage at all | It read the preimages from the database at the end, but every test empties the database first | Each test's preimages are read after it, before the next one empties the tables |
+| 48 | The random run started each cash-in twice, the first time with 0 sats | My own test code: a leftover from a first draft | Rewritten to one start with the right sats |
+| 49 | The page copy test failed: the French and Wolof of one sentence asked for `{name}` one time fewer than the English | I wrote "ses sats" where the English says "Ndeye's sats" | The name is in all three |
+| 50 | In the stills, the demo page had two "do this now" steps at once when the second phone was an agent's, and the agent's label was cut off in the picker on a 360 px screen | The agent's walk-through was added under the four steps instead of in their place; the picker's label had grown by "(agent)" | The four steps fold away while an agent holds the second phone (decision 65); the picker shows the name only and the number wraps under it when needed |
+| 51 | Found while reading the engine before its tests: if the call that settles a held payment failed, the error went up to the agent's screen though the confirmation was already stored | `creditStep` let the error through | The error is logged, the trade stays "settling", the sweep asks the node again. The agent's screen says it is in progress. Tested by "the process dies after the confirmation is stored and before the node settled" |
+| 52 | The full integration run failed in five files at once. The mint was restarting in a loop | Nutshell's watchdog (checked every 60 s and at start) stops the mint when the gap between its node's balance and the ecash it issued shrinks. A deposit is two calls: our node pays the mint's quote, then the vault collects the ecash. One check landed between the two for a 110,000 sat top-up, the next saw the gap shrink by 109,997 sats, and every restart compared against that same stored reading. Nothing was wrong with the money | `MINT_WATCHDOG_IGNORE_MISMATCH` on the regtest mint (decision 67): mismatches are logged, not fatal. The documented recovery for the loop is the same setting. The mint ran from 17:45 to 20:06 UTC, through every earlier run of this phase, before it tripped |
+| 53 | On Postgres 17, three escrow unit tests failed that pass on PGlite: agents and trades from earlier tests showed up in later ones | My test file opened a new database per test and never emptied it. With PGlite that is a fresh database each time; with `TEST_DATABASE_URL` it is the same one. It also left a connection pool open per test | One database for the file, emptied with `truncateAll` before each test and closed at the end, as the other gateway test files do |

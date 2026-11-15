@@ -52,13 +52,14 @@ Built and tested as of this draft:
 - Secret code hashing and lockout, spending limits, SMS handling, the menu engine, and every screen in French, Wolof and English.
 - The wallet itself, through the menus: open an account, read a balance, send to another number, see how to receive, read the history, change the code, the language or the address name. 143 tests without a network, 15 more with real ecash.
 - Something you can click. One command starts everything, and a web page shows two phones with buttons. They dial the real server. A guide walks you through four steps: open an account, add test money, send 500 F, look at the other phone. A browser test does the same walk on a 360 pixel screen.
+- Agents. Press 5 to cash in: you pick an agent, the agent's sats get locked in a Lightning payment, you send the francs, the agent confirms with their code and the sats are yours. Press 6 to cash out: your sats wait in a locked box until you say the francs arrived. Bonds, disputes, an arbiter's button. On the demo page the second phone can be the agent's.
 
-Designed and not built yet: the agent cash-in and cash-out, vouchers and
-shops, Lightning addresses that can be paid, the public reserve check, the voice line. The order is in `docs/PLAN.md`.
+Designed and not built yet: vouchers and shops, Lightning addresses that can be paid, the public reserve check,
+the voice line. The order is in `docs/PLAN.md`.
 
-One gap matters more than the rest today. The only door in from outside is the top-up button of the demo, and
-it only exists on the test network. A real person still has no way to put francs or sats into an account. That
-comes with the agents and with Lightning addresses.
+The gap that matters most moved. Money can now come in through an agent, but on the test network the francs part
+is pretend: nobody sends a real Wave transfer. And a relative abroad still cannot pay in from their own wallet.
+That comes with Lightning addresses.
 
 I would rather show less and have every part of it be real.
 
@@ -114,9 +115,14 @@ Option two: the agent and the customer swap directly, and Melax only referees th
 are locked in a payment that nobody can spend yet. The customer sends francs over Wave. The agent confirms, the
 lock opens. If nobody confirms in 45 minutes, the sats go back by themselves.
 
-I chose the referee. The Lightning part is built and tested. The engine around it is the next big phase.
+I chose the referee, and it is built now. Cash-out is the mirror: your sats move into a box only the engine opens,
+the agent sends you francs, you confirm with your code, and the box pays the agent's wallet.
 
-Cost: a person has to press confirm, sats sit locked while they wait, and a dispute needs a human arbiter.
+Each agent also puts up a bond, in sats, with Melax. An agent can never have more cash-ins open than the bond
+covers. It is the agent's skin in the game, and it pays the customer when a dispute outlives the lock (choice 24).
+
+Cost: a person has to press confirm, sats sit locked while they wait, and a dispute needs a human arbiter. There
+is no console for the arbiter yet, just a protected address the console will call.
 
 ### 5. Getting a voucher into one SMS
 
@@ -210,6 +216,11 @@ money goes out, the user pays the real Lightning fee, capped at 5 sats or half a
 asks: 3 to 4 sats when it knows a route. When it does not, it asks for 1 percent and my cap refuses the payment.
 
 Cost: on a public network that refusal may happen more often. I would rather refuse than surprise someone with a fee.
+
+A cash-out has the same fee, and somebody has to carry it. I could have paid the agent the sats minus the fee.
+Instead the user's box holds the sats plus the most the fee can be, the agent gets exactly the sats they agreed to,
+and whatever the fee did not use comes back to the user. So the confirm screen shows a slightly bigger number
+than the sats. That number is the honest one.
 
 ### 14. A test network, not real bitcoin
 
@@ -312,13 +323,47 @@ step you did not do, and what the page says is always what the wallet did.
 Cost: the page asks the server every second and a half, and the guide now depends on the names the server gives
 its SMS. Change one and the guide stops ticking. A browser test catches that.
 
+### 23. How long a payment can stay locked
+
+The plan said 45 minutes and wrote it as a fact. Before building anything I measured it. A locked Lightning
+payment dies when its block budget runs out, and the node gives up a bit before that. With LND's default the
+payment survived 65 blocks. On my test chain that is 32.5 minutes. The 45 minute window would have failed every
+time, quietly, on the agent's side.
+
+So the budget is now a setting, and the server refuses to start if the setting and the block time cannot cover the
+3 hour hard cap. On the test chain 432 blocks held a payment for 414 blocks, past the 360 the cap needs. On the
+real network the default is already enough, because a block takes ten minutes there and not thirty seconds.
+
+The other road was to trust the plan's number. It would have looked fine in every demo shorter than half an hour.
+
+Cost: a bigger budget ties up the agent's sats in the network for longer if something goes wrong. And there is a
+ceiling: the paying node refused a budget of 2,100 blocks.
+
+### 24. A dispute that outlives the lock
+
+Say you sent the francs and the agent swears they never came. Someone has to look. That can take a day, and a
+Lightning payment cannot stay locked for a day.
+
+Option one: keep the payment locked as long as possible and hope the arbiter is quick. Option two: let the lock
+go at the 3 hour cap, give the agent their sats back, and if the arbiter then decides for you, pay you out of the
+agent's bond.
+
+I chose the second. It is why open cash-ins are capped by the bond: the bond has to be able to pay all of them.
+A decision made while the payment is still locked just settles it, and the bond is not touched.
+
+Cost: an agent with a dispute open can take fewer new customers until it is decided. And the arbiter's decision
+is recorded with who made it, but not signed yet. Signing comes with the Nostr keys.
+
 ## What I do not claim
 
 - The Wolof was written by me and no native speaker has read it yet.
 - No SMS has gone through a physical phone. The adapters are tested against the documented formats.
 - No short code is live. The server speaks the protocol aggregators use, which proves the software and not the contract.
 - This is not legal to run with real money in Senegal today without advice.
-- Nobody can pay into an account from outside yet, except through the demo's top-up button on the test network. The address shown on the screens cannot be paid yet.
+- Nobody can pay into an account from outside yet, except through the demo's top-up button and through an agent, both on the test network. The address shown on the screens cannot be paid yet.
+- No Wave or Orange Money transfer has happened. In the demo the francs side of a trade is pretend, and the agent's confirmation is a button press.
+- The agents' wallets on the test network are one node playing everybody. A wallet linked by Nostr Wallet Connect was tested for the locked payment only: the public sandbox cannot pay my test mint, so the whole trade was never run there.
+- An arbiter's decision is recorded, not signed. There is no console for it yet.
 - It is not deployed anywhere. It runs on my machine, in Docker, from one command.
 - The demo pages have no login. Anyone who can reach them can hold any phone. That is what a demo is for, and it is why the server refuses to carry them outside demo mode.
 - The Wolof on the web pages is mine too, and just as unread as the Wolof in the menus.
@@ -344,6 +389,10 @@ These answers describe the design. The section above says which parts are built.
 *Can someone empty my account by faking an SMS from my number?* No. An SMS can ask for a balance or for help. Sending needs a USSD session and the code.
 
 *The line dropped while I was typing. Did I pay?* If you had not typed the code, nothing moved, and dialling again offers to continue from the confirm screen. If you had, either you get the receipt by SMS or an SMS saying it did not go through. The server finds out which. It does not guess.
+
+*What if the agent keeps my francs and never confirms?* Open a dispute from menu 5. Until the arbiter decides, the agent's sats stay locked, up to 3 hours. If the decision comes later than that, you are paid from the agent's bond.
+
+*What if I take the agent's francs and say they never came?* Your sats stay in the box. Once the agent says the francs were sent, neither the clock nor a cancel gives them back to you: after 45 minutes of silence it becomes a dispute.
 
 *How do you know the books are right?* The vault tests end by comparing the ledger with the notes held, account by account. The long run and the crash tests also ask the mint whether those notes are still unspent.
 
