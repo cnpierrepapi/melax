@@ -1,0 +1,18 @@
+dial #2580#
+Melax
+1 Sa xaalis
+2 Yonnee
+3 Jot
+4 Fey jaaykat
+5 Dugal xaalis
+6 Genne xaalis
+0 Yeneen
+
+> 3
+Ngir jot xaalis, joxeel sa nimero, walla:
+kora-brave42@melax.sn
+1 Jot adres bi ci SMS
+0 Menu
+
+> 1
+Adres bi yonnee nanu ko ci SMS.

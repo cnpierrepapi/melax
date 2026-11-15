@@ -1,0 +1,35 @@
+dial #2580#
+Melax
+1 Sa xaalis
+2 Yonnee
+3 Jot
+4 Fey jaaykat
+5 Dugal xaalis
+6 Genne xaalis
+0 Yeneen
+
+> 9
+Sama kont
+1 Kod
+2 Lakk
+3 Sama adres
+4 Wottukat yi
+5 Lim yi
+6 Smartphone
+0 Dellu
+
+> 3
+Sa adres:
+kora-brave42@melax.sn
+1 Soppi tur wi
+0 Menu
+
+> 1
+Tur bu bees (araf, chiffres, tire; 3 ba 20):
+
+> awa-dakar
+Sa kod:
+
+> *****
+Adres bu bees:
+awa-dakar@melax.sn

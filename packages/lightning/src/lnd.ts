@@ -81,7 +81,7 @@ export class LndBackend implements LightningBackend {
           res.on("data", (c: Buffer) => chunks.push(c));
           res.on("end", () => {
             const text = Buffer.concat(chunks).toString("utf8");
-            let json: Record<string, unknown> = {};
+            let json: Record<string, unknown>;
             try {
               json = text ? (JSON.parse(text) as Record<string, unknown>) : {};
             } catch {

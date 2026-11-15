@@ -1,0 +1,30 @@
+dial #2580#
+Melax
+1 Solde
+2 Envoyer
+3 Recevoir
+4 Payer marchand
+5 Depot
+6 Retrait
+0 Suite
+
+> 2
+Envoyer a:
+numero (ex 771234567)
+ou code de paiement (6 chiffres)
+
+> 781112233
+Montant en FCFA:
+
+> 500
+Envoyer 500 F (1 250 sats) a Moussa (78*****33)?
+1 Confirmer
+2 Annuler
+
+> 1
+Code secret:
+
+> *****
+Envoye: 500 F a Moussa.
+Recu no 1001
+Solde: 4 500 F

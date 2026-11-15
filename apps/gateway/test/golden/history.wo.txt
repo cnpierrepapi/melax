@@ -1,0 +1,34 @@
+dial #2580#
+Melax
+1 Sa xaalis
+2 Yonnee
+3 Jot
+4 Fey jaaykat
+5 Dugal xaalis
+6 Genne xaalis
+0 Yeneen
+
+> 8
+Sa kod:
+
+> *****
+14/11 -500 F Moussa
+13/11 +5 000 F Fatou
+12/11 -1 500 F Boutique Ndeye
+11/11 +250 F Ibra
+1 Yeneen
+0 Menu
+
+> 1
+09/11 -2 000 F Moussa
+0 Menu
+
+> 0
+Melax
+1 Sa xaalis
+2 Yonnee
+3 Jot
+4 Fey jaaykat
+5 Dugal xaalis
+6 Genne xaalis
+0 Yeneen

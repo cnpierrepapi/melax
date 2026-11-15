@@ -1,0 +1,20 @@
+dial #2580#
+Melax
+1 Francais
+2 Wolof
+3 English
+
+> 3
+Welcome to Melax: bitcoin on this phone.
+Choose a 5-digit secret code:
+
+> *****
+Type the secret code again:
+
+> *****
+Your first name (shown to people who send you money):
+
+> Awa
+Account created.
+Your address: kora-brave42@melax.sn
+Dial #2580# to use it.

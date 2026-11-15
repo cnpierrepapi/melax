@@ -217,8 +217,11 @@ export class UssdRuntime<S, E, R> {
             sessions.clearResumable(rec.phone);
           } else {
             sessions.put(rec);
+            // "Nowhere" also forgets an older resume point: a user who walked back to a screen that
+            // is not worth resuming must not be offered the screen before it.
             const rp = machine.resumePoint ? machine.resumePoint(state) : null;
             if (rp !== null) sessions.setResumable(rec.phone, rp, clock.now());
+            else sessions.clearResumable(rec.phone);
           }
           return step.screen;
         }

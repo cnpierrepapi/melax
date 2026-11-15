@@ -1,0 +1,35 @@
+dial #2580#
+Melax
+1 Solde
+2 Envoyer
+3 Recevoir
+4 Payer marchand
+5 Depot
+6 Retrait
+0 Suite
+
+> 9
+Mon compte
+1 Code secret
+2 Langue
+3 Mon adresse
+4 Gardiens
+5 Limites
+6 Smartphone
+0 Retour
+
+> 3
+Votre adresse:
+kora-brave42@melax.sn
+1 Changer le nom
+0 Menu
+
+> 1
+Nouveau nom (lettres, chiffres, tirets; 3 a 20):
+
+> awa-dakar
+Code secret:
+
+> *****
+Nouvelle adresse:
+awa-dakar@melax.sn

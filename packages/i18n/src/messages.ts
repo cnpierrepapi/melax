@@ -23,6 +23,9 @@ export const messages = {
   "m.menu": { fr: "Menu", wo: "Menu", en: "Menu" },
   "m.confirm": { fr: "Confirmer", wo: "Waaw", en: "Confirm" },
   "m.cancel": { fr: "Annuler", wo: "Bayyi", en: "Cancel" },
+  "home.title": { fr: "Melax", wo: "Melax", en: "Melax" },
+  // Shown by menu entries whose phase is not built yet. Remove when the last stub is gone (see docs/PLAN.md).
+  soon: { fr: "Bientot disponible sur Melax.", wo: "Lii dina am ci Melax ci kanam.", en: "Coming soon on Melax." },
 
   // ----- onboarding -----
   "onb.welcome": {
@@ -102,6 +105,12 @@ export const messages = {
     en: "Send to:\nphone number (e.g. 771234567)\nor pay code (6 digits)",
   },
   "send.badto": { fr: "Numero ou code invalide.\nNumero ou code de paiement:", wo: "Nimero walla kod bi baaxul.\nNimero walla kodu fey:", en: "Invalid number or code.\nNumber or pay code:" },
+  // Until phase 7 turns a payment to an unknown number into an SMS voucher (send.confirm_voucher).
+  "send.notfound": {
+    fr: "Ce numero n'a pas de compte Melax.\nNumero ou code de paiement:",
+    wo: "Nimero bii amul kont Melax.\nNimero walla kodu fey:",
+    en: "This number has no Melax account.\nNumber or pay code:",
+  },
   "send.self": { fr: "C'est votre propre numero.\nNumero ou code de paiement:", wo: "Sa nimero bopp la.\nNimero walla kodu fey:", en: "That is your own number.\nNumber or pay code:" },
   "send.confirm": {
     fr: "Envoyer {fcfa} ({sats}) a {name} ({masked})?\n1 Confirmer\n2 Annuler",

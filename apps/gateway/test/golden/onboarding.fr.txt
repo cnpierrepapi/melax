@@ -1,0 +1,20 @@
+dial #2580#
+Melax
+1 Francais
+2 Wolof
+3 English
+
+> 1
+Bienvenue sur Melax: du bitcoin sur ce telephone.
+Choisissez un code secret de 5 chiffres:
+
+> *****
+Retapez le code secret:
+
+> *****
+Votre prenom (montre a ceux qui vous envoient de l'argent):
+
+> Awa
+Compte cree.
+Votre adresse: kora-brave42@melax.sn
+Composez #2580# pour l'utiliser.

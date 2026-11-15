@@ -1,0 +1,30 @@
+dial #2580#
+Melax
+1 Balance
+2 Send
+3 Receive
+4 Pay a shop
+5 Cash in
+6 Cash out
+0 More
+
+> 2
+Send to:
+phone number (e.g. 771234567)
+or pay code (6 digits)
+
+> 781112233
+Amount in FCFA:
+
+> 500
+Send 500 F (1 250 sats) to Moussa (78*****33)?
+1 Confirm
+2 Cancel
+
+> 1
+Secret code:
+
+> *****
+Sent: 500 F to Moussa.
+Receipt no 1001
+Balance: 4 500 F

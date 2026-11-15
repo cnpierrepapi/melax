@@ -1,0 +1,37 @@
+dial #2580#
+Melax
+1 Balance
+2 Send
+3 Receive
+4 Pay a shop
+5 Cash in
+6 Cash out
+0 More
+
+> 9
+My account
+1 Secret code
+2 Language
+3 My address
+4 Guardians
+5 Limits
+6 Smartphone
+0 Back
+
+> 1
+Secret code
+1 Change the code
+2 Forgot the code
+0 Back
+
+> 1
+Current secret code:
+
+> *****
+New code (5 digits):
+
+> *****
+Type the new code again:
+
+> *****
+Secret code changed.

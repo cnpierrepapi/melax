@@ -4,6 +4,7 @@ import { AppError } from "@melax/core";
 import {
   VOUCHER_ALPHABET,
   _q30,
+  deriveKey,
   deriveUserKey,
   formatVoucherCode,
   hashPin,
@@ -78,6 +79,16 @@ describe("keys and sealing", () => {
     expect(() => open(key, flipped, "user:usr_1")).toThrow(AppError);
     expect(() => open(key, sealed.subarray(0, 10), "user:usr_1")).toThrow(AppError);
     expect(() => open(key, sealed, "user:usr_2")).toThrow(AppError);
+  });
+  it("derives a different key for each purpose from one pepper, the same one every time", () => {
+    const a = deriveKey(pepper, "pin");
+    expect(a).toHaveLength(32);
+    expect(a.equals(deriveKey(pepper, "pin"))).toBe(true);
+    expect(a.equals(deriveKey(pepper, "phone"))).toBe(false);
+    expect(a.equals(deriveKey(randomBytes(32), "pin"))).toBe(false);
+    expect(a.equals(pepper)).toBe(false);
+    expect(() => deriveKey(randomBytes(16), "pin")).toThrow(AppError);
+    expect(() => deriveKey(pepper, "")).toThrow(AppError);
   });
 });
 

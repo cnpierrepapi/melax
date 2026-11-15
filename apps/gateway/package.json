@@ -4,7 +4,9 @@
   "private": true,
   "license": "MIT",
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
+  "exports": {
+    ".": "./src/app.ts"
+  },
   "dependencies": {
     "@melax/cashu": "*",
     "@melax/core": "*",
@@ -18,5 +20,6 @@
     "@melax/vault": "*",
     "fastify": "^5.12.8",
     "zod": "^4.6.7"
-  }
+  },
+  "description": "The Melax gateway: accounts, the wallet menus over USSD, SMS in and out, and the HTTP routes aggregators call."
 }

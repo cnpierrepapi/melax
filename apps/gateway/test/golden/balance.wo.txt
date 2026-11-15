@@ -1,0 +1,28 @@
+dial #2580#
+Melax
+1 Sa xaalis
+2 Yonnee
+3 Jot
+4 Fey jaaykat
+5 Dugal xaalis
+6 Genne xaalis
+0 Yeneen
+
+> 1
+Sa kod:
+
+> *****
+Li nga am: 5 000 F
+(12 500 sats)
+1 BTC = 40 000 000 F
+0 Menu
+
+> 0
+Melax
+1 Sa xaalis
+2 Yonnee
+3 Jot
+4 Fey jaaykat
+5 Dugal xaalis
+6 Genne xaalis
+0 Yeneen

@@ -85,6 +85,16 @@ export function deriveUserKey(pepper: Buffer, salt: Buffer): Buffer {
   return Buffer.from(hkdfSync("sha256", pepper, salt, "melax/vault/v1", 32));
 }
 
+/**
+ * A separate 32-byte key per purpose from the one server pepper: HKDF-SHA256(pepper, label).
+ * The gateway uses it so the PIN pepper, the phone lookup key and the data sealing key are never the same bytes.
+ */
+export function deriveKey(pepper: Buffer, label: string): Buffer {
+  if (pepper.length < 32) throw new AppError("BAD_INPUT", "pepper must be at least 32 bytes");
+  if (!label) throw new AppError("BAD_INPUT", "a derived key needs a label");
+  return Buffer.from(hkdfSync("sha256", pepper, Buffer.alloc(0), "melax/key/v1/" + label, 32));
+}
+
 /** AES-256-GCM. Layout: 12-byte nonce | ciphertext | 16-byte tag. `aad` binds the blob to its owner. */
 export function seal(key: Buffer, plaintext: Buffer, aad = ""): Buffer {
   const nonce = randomBytes(12);

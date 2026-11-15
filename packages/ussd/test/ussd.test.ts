@@ -148,6 +148,21 @@ describe("runtime", () => {
     expect((await rt.handle({ sessionId: "c2", phone: P, input: "1", shortcut: [] })).text).toBe("Name?");
   });
 
+  it("moving on to a screen with no resume point forgets the older one", async () => {
+    // A machine where only "ask" can be resumed and "found" cannot.
+    const picky: Machine<S, E, R> = { ...machine, resumePoint: (s) => (s.at === "ask" ? s : null) };
+    const rt = new UssdRuntime<S, E, R>({
+      machine: picky,
+      perform: async (e) => ({ greeting: "Hi " + e.name }),
+      sessions: new MemorySessions<S>(),
+      clock: new FakeClock(),
+      texts: { busy: "b", expired: "x", error: "e", resume: "Continue where you stopped?\n1 Yes\n2 No" },
+    });
+    await rt.handle({ sessionId: "e1", phone: P, input: "", shortcut: [] }); // at "ask": resumable
+    await rt.handle({ sessionId: "e1", phone: P, input: "Awa", shortcut: [] }); // at "found": not resumable
+    expect((await rt.handle({ sessionId: "e2", phone: P, input: "", shortcut: [] })).text).toBe("Name?");
+  });
+
   it("a session that ended normally leaves nothing to resume", async () => {
     const { rt } = runtime();
     await rt.handle({ sessionId: "d1", phone: P, input: "", shortcut: [] });

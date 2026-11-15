@@ -1,0 +1,30 @@
+dial #2580#
+Melax
+1 Sa xaalis
+2 Yonnee
+3 Jot
+4 Fey jaaykat
+5 Dugal xaalis
+6 Genne xaalis
+0 Yeneen
+
+> 2
+Yonnee ci:
+nimero (ni 771234567)
+walla kodu fey (6 chiffres)
+
+> 781112233
+Naata la (FCFA):
+
+> 500
+Yonnee 500 F (1 250 sats) Moussa (78*****33)?
+1 Waaw
+2 Bayyi
+
+> 1
+Sa kod:
+
+> *****
+Yonnee nanu 500 F Moussa.
+Resi no 1001
+Li des: 4 500 F
