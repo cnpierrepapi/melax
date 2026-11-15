@@ -13,6 +13,30 @@ describe("configuration", () => {
     expect(c).toMatchObject({ demo: true, port: 8787, ussdCode: "#2580#", at: null, ussdHttpSecret: null, smsOut: { adapter: "memory" }, smsIn: { asgSigningKey: null, httpSmsSigningKey: null }, rateFixed: null, stepBudgetMs: 12_000 });
   });
 
+  it("the escrow's block delta must hold a cash-in past the 3 hour cap on the network in use", () => {
+    // bitcoin: LND's default of 80 blocks at 10 minutes a block is far past 3 hours
+    expect(loadConfig(base).escrow).toEqual({ cltvBlocks: 80, blockSeconds: 600 });
+    // regtest at 30 s a block: 80 blocks lasted 32.5 minutes (scripts/probe/hold-cltv-probe.ts). Refused.
+    expect(() => loadConfig({ ...base, ESCROW_BLOCK_SECONDS: "30" })).toThrow(/ESCROW_CLTV_BLOCKS/);
+    // 381 blocks: (381 - 22) * 30 s is 2 h 59 min 30 s. One block more covers it.
+    expect(() => loadConfig({ ...base, ESCROW_BLOCK_SECONDS: "30", ESCROW_CLTV_BLOCKS: "381" })).toThrow(/ESCROW_CLTV_BLOCKS/);
+    expect(loadConfig({ ...base, ESCROW_BLOCK_SECONDS: "30", ESCROW_CLTV_BLOCKS: "382" }).escrow).toEqual({ cltvBlocks: 382, blockSeconds: 30 });
+    expect(loadConfig({ ...base, ESCROW_BLOCK_SECONDS: "30", ESCROW_CLTV_BLOCKS: "432" }).escrow.cltvBlocks).toBe(432);
+    // above what a payer's node accepts (the probe's world node did not pay at 2100)
+    expect(() => loadConfig({ ...base, ESCROW_CLTV_BLOCKS: "2100" })).toThrow(/ESCROW_CLTV_BLOCKS/);
+  });
+
+  it("the arbiter's secret is optional, and short ones are refused without being repeated", () => {
+    expect(loadConfig(base).operatorSecret).toBeNull();
+    expect(loadConfig({ ...base, OPERATOR_SECRET: "o".repeat(24) }).operatorSecret).toBe("o".repeat(24));
+    expect(() => loadConfig({ ...base, OPERATOR_SECRET: "letmein" })).toThrow(/OPERATOR_SECRET/);
+    try {
+      loadConfig({ ...base, OPERATOR_SECRET: "letmein" });
+    } catch (e) {
+      expect((e as Error).message).not.toContain("letmein");
+    }
+  });
+
   it("refuses to start without a pepper, or with a short one", () => {
     expect(() => loadConfig({})).toThrow(AppError);
     expect(() => loadConfig({ MELAX_PEPPER: "abcd" })).toThrow(/MELAX_PEPPER/);

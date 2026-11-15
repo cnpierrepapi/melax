@@ -13,6 +13,10 @@ const optional = z
   .string()
   .optional()
   .transform((v) => (v === undefined || v.trim() === "" ? undefined : v.trim()));
+/** A held cash-in is released after 3 hours whatever happens (escrow/engine.ts, HARD_CAP_MS). */
+export const ESCROW_HARD_CAP_SEC = 3 * 3600;
+/** LND let go of a held payment 18 to 21 blocks before its delta ran out in scripts/probe/hold-cltv-probe.ts. */
+export const ESCROW_LND_MARGIN_BLOCKS = 22;
 const secret = (min: number, what: string) => optional.refine((v) => v === undefined || v.length >= min, `${what} must be at least ${min} characters`);
 
 const Env = z.object({
@@ -58,6 +62,16 @@ const Env = z.object({
   HTTPSMS_API_KEY: optional,
   HTTPSMS_FROM: optional,
   HTTPSMS_SIGNING_KEY: secret(16, "HTTPSMS_SIGNING_KEY"),
+  /** The arbiter's route /ops/escrow/decide exists only when this is set (Authorization: Bearer <secret>). */
+  OPERATOR_SECRET: secret(24, "OPERATOR_SECRET"),
+  /**
+   * Block delta on the hold invoice of a cash-in: how long the agent's payment can stay held. LND's own
+   * default is 80. With ESCROW_BLOCK_SECONDS it must cover the 3 hour hard cap, plus the 22 blocks
+   * before the end at which LND lets go on its own (scripts/probe/hold-cltv-probe.ts).
+   */
+  ESCROW_CLTV_BLOCKS: z.coerce.number().int().min(40).max(2000).default(80),
+  /** Seconds between blocks on the network in use: 600 on bitcoin, 30 on the local regtest chain. */
+  ESCROW_BLOCK_SECONDS: z.coerce.number().int().min(1).max(3600).default(600),
   /** Whole FCFA per bitcoin. Set in tests and demos; unset, the live source is used. */
   RATE_FIXED_XOF_PER_BTC: z.coerce.number().int().min(100_000).max(100_000_000_000).optional(),
   /** Set to 1 behind a reverse proxy, so the caller's address is read from X-Forwarded-For. */
@@ -87,6 +101,8 @@ export interface Config {
   smsOut: SmsOut;
   smsIn: { asgSigningKey: string | null; httpSmsSigningKey: string | null };
   rateFixed: number | null;
+  operatorSecret: string | null;
+  escrow: { cltvBlocks: number; blockSeconds: number };
   trustProxy: boolean;
   stepBudgetMs: number;
   logLevel: "debug" | "info" | "warn" | "error";
@@ -124,6 +140,10 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
   if (worldSet.length > 0 && worldSet.length < 3) for (const [name, v] of Object.entries(world)) if (v === undefined) problems.push(`${name} is required when another DEMO_WORLD_LND_* variable is set`);
   if (!e.MELAX_DEMO && worldSet.length > 0) problems.push(`${worldSet[0]![0]} is only allowed with MELAX_DEMO=1`);
   if (!e.MELAX_DEMO && e.DEMO_SEED) problems.push("DEMO_SEED is only allowed with MELAX_DEMO=1");
+  // A held cash-in must outlive the hard cap, or LND gives the agent's sats back before anyone decides.
+  if ((e.ESCROW_CLTV_BLOCKS - ESCROW_LND_MARGIN_BLOCKS) * e.ESCROW_BLOCK_SECONDS < ESCROW_HARD_CAP_SEC) {
+    problems.push(`ESCROW_CLTV_BLOCKS with ESCROW_BLOCK_SECONDS must hold a payment for ${ESCROW_HARD_CAP_SEC / 3600} hours plus ${ESCROW_LND_MARGIN_BLOCKS} blocks`);
+  }
   if (problems.length > 0) refuse(problems);
 
   return {
@@ -144,6 +164,8 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     smsOut,
     smsIn: { asgSigningKey: e.ASG_SIGNING_KEY ?? null, httpSmsSigningKey: e.HTTPSMS_SIGNING_KEY ?? null },
     rateFixed: e.RATE_FIXED_XOF_PER_BTC ?? null,
+    operatorSecret: e.OPERATOR_SECRET ?? null,
+    escrow: { cltvBlocks: e.ESCROW_CLTV_BLOCKS, blockSeconds: e.ESCROW_BLOCK_SECONDS },
     trustProxy: e.TRUST_PROXY,
     stepBudgetMs: e.STEP_BUDGET_MS,
     logLevel: e.LOG_LEVEL,

@@ -6,7 +6,7 @@ import { FakeClock } from "@melax/core";
 import { LANGS, type Lang } from "@melax/i18n";
 import { gsm7Septets, isGsm7 } from "@melax/sms";
 import { MemorySessions, UssdRuntime } from "@melax/ussd";
-import { type Effect, type Res, type S, PIN_STEPS, createWalletMachine, runtimeTexts } from "../src/ussd/machine.ts";
+import { type Effect, type Res, type S, type TradeInfo, PIN_STEPS, createWalletMachine, runtimeTexts } from "../src/ussd/machine.ts";
 
 const CODE = "#2580#";
 const machine = createWalletMachine({ code: CODE });
@@ -53,9 +53,44 @@ function world(over: Over = {}, lang: Lang = "fr", registered = true): Responder
         return { ok: true, address: e.alias + "@melax.sn" };
       case "limits":
         return { ok: true, tier: 0, perTxFcfa: 25_000, dayLeftFcfa: 49_500, monthLeftFcfa: 199_500 };
+      case "trade":
+        return { ok: true, trade: null };
+      case "offers":
+        return { ok: true, offers: e.kind === "cashin" ? [OFFER_NDEYE, OFFER_OUSMANE] : [{ ...OFFER_NDEYE, sats: 5050 }] };
+      case "cashin":
+        return { ok: true, trade: { ...CASHIN_HELD } };
+      case "cashout":
+        return { ok: true, trade: { ...CASHOUT_LOCKED } };
+      case "tradeConfirm":
+        return { ok: true, trade: { ...CASHOUT_LOCKED, state: "done" } };
+      case "dispute":
+        return { ok: true, trade: { ...(e.tradeId === CASHIN_HELD.id ? CASHIN_HELD : CASHOUT_LOCKED), state: "disputed" } };
+      case "tradeCancel":
+        return { ok: true, trade: { ...CASHIN_HELD, state: "expired" } };
+      case "desk":
+        return { ok: true, nIn: 1, nOut: 1 };
+      case "deskNext":
+        return { ok: true, trade: e.kind === "cashin" ? { ...CASHIN_HELD, number: "" } : { ...CASHOUT_LOCKED, number: "771234567" } };
+      case "deskAct":
+        return { ok: true, trade: e.act === "confirm" ? { ...CASHIN_HELD, state: "done" } : { ...CASHOUT_LOCKED, state: e.act === "sent" ? "sent" : "refunding" } };
+      case "bond":
+        return { ok: true, bondSats: 40_000, bondFcfa: 16_000, bondedSats: 4950 };
+      case "bondAdd":
+        return { ok: true, sats: 52_500 };
+      case "bondOut":
+        return { ok: true, sats: 40_000 };
+      case "offer":
+        return { ok: true, offer: { premiumBp: 150, method: "wave", minFcfa: 500, maxFcfa: 50_000, active: true } };
+      case "offerToggle":
+        return { ok: true, active: false };
     }
   };
 }
+
+const OFFER_NDEYE = { agentId: "u_ndeye", name: "Ndeye", method: "wave", sats: 4950 };
+const OFFER_OUSMANE = { agentId: "u_ousmane", name: "Ousmane", method: "om", sats: 4900 };
+const CASHIN_HELD: TradeInfo = { id: "t_1", ref: "D4F2A1", kind: "cashin", state: "held", fcfa: 2000, sats: 4950, lockSats: 4950, method: "wave", agent: "Ndeye", name: "Awa", masked: "77*****67", number: "776665544" };
+const CASHOUT_LOCKED: TradeInfo = { id: "t_2", ref: "R9C3B0", kind: "cashout", state: "locked", fcfa: 2000, sats: 5050, lockSats: 5076, method: "wave", agent: "Ndeye", name: "Awa", masked: "77*****67", number: "" };
 
 /** Drives the machine the way the runtime does, without the runtime. Records every effect and every resting state. */
 function play(respond: Responder = world(), opts: { shortcut?: string[] } = {}) {
@@ -215,13 +250,193 @@ describe("French transcripts", () => {
 
   it("entries that belong to later phases say so and end", () => {
     const soon = "Bientot disponible sur Melax.";
-    for (const path of [["4"], ["5"], ["6"], ["7"], ["0", "7"], ["9", "4"], ["9", "6"], ["9", "1", "2"], ["2", "123456"]]) {
+    for (const path of [["4"], ["7"], ["0", "7"], ["9", "4"], ["9", "6"], ["9", "1", "2"], ["2", "123456"]]) {
       const p = play();
       let last = "";
       for (const k of path) last = p.type(k);
       expect(last, path.join(">")).toBe(soon);
       expect(p.ended).toBe(true);
     }
+  });
+});
+
+const AGENT_PROFILE: Res = { ok: true, registered: true, lang: "fr", name: "Ndeye", role: "agent" };
+const agentWorld = (over: Over = {}, lang: Lang = "fr") => world({ profile: { ...AGENT_PROFILE, lang }, ...over }, lang);
+
+describe("cash-in and cash-out, French transcripts", () => {
+  it("cash-in: amount, a short list of agents with the sats each gives, confirm, then where to send the francs. No code", () => {
+    const p = play();
+    expect(p.type("5")).toBe("Montant en FCFA:");
+    expect(p.type("2000")).toBe("Choisir un agent:\n1 Ndeye (Wave) 4 950 sats\n2 Ousmane (Orange Money) 4 900 sats\n0 Retour");
+    expect(p.type("1")).toBe("Depot de 2 000 F chez Ndeye par Wave. Vous recevrez 4 950 sats.\n1 Confirmer\n2 Annuler");
+    expect(p.type("1")).toBe("Envoyez 2 000 F par Wave au 776665544 (Ndeye).\nRef D4F2A1. Details par SMS.");
+    expect(p.ended).toBe(true);
+    expect(p.effects.filter((e) => e.t === "cashin")).toEqual([{ t: "cashin", agentId: "u_ndeye", fcfa: 2000, sats: 4950 }]);
+    expect(p.states.some((s) => PIN_STEPS.has(s.at))).toBe(false);
+  });
+
+  it("cash-in: when the agent's sats are not held yet, the screen says the instructions come by SMS", () => {
+    const p = play(world({ cashin: { ok: true, trade: { ...CASHIN_HELD, state: "open" } } }));
+    for (const k of ["5", "2000", "1"]) p.type(k);
+    expect(p.type("1")).toBe("Depot D4F2A1: l'agent prepare les sats. Les instructions arrivent par SMS.");
+  });
+
+  it("cash-in: no agent for the amount, a bad amount, cancel at the confirm screen", () => {
+    const none = play(world({ offers: { ok: true, offers: [] } }));
+    none.type("5");
+    expect(none.type("2000")).toBe("Aucun agent disponible pour ce montant.");
+    expect(none.ended).toBe(true);
+    const p = play();
+    p.type("5");
+    expect(p.type("0")).toBe("Montant invalide.\nMontant en FCFA:");
+    expect(p.type("abc")).toBe("Montant invalide.\nMontant en FCFA:");
+    p.type("2000");
+    expect(p.type("7")).toContain("Choisir un agent:"); // not on the list: the list again
+    p.type("2");
+    expect(p.type("2")).toBe("Annule.");
+    expect(p.effects.some((e) => e.t === "cashin")).toBe(false);
+  });
+
+  it("cash-out: amount, agent, confirm with the sats that will be locked, code last", () => {
+    const p = play();
+    expect(p.type("6")).toBe("Montant en FCFA:");
+    expect(p.type("2000")).toBe("Choisir un agent:\n1 Ndeye (Wave) 5 050 sats\n0 Retour");
+    // 5 050 sats plus the 26 sats the pay-out's Lightning fee may take
+    expect(p.type("1")).toBe("Retrait de 2 000 F chez Ndeye par Wave. 5 076 sats seront bloques.\n1 Confirmer\n2 Annuler");
+    expect(p.type("1")).toBe("Code secret:");
+    expect(p.type(PIN)).toBe("Retrait R9C3B0 lance. Ndeye vous envoie 2 000 F par Wave.\nConfirmez la reception au menu 6.");
+    expect(p.effects.at(-1)).toEqual({ t: "cashout", agentId: "u_ndeye", fcfa: 2000, sats: 5050, pin: PIN });
+    expect(JSON.stringify(p.state)).not.toContain(PIN);
+  });
+
+  it("cash-out refused over a limit or the balance says why and ends", () => {
+    const p = play(world({ cashout: { ok: false, err: "LIMIT", reason: "PER_DAY", allowedFcfa: 1000 } }));
+    for (const k of ["6", "2000", "1", "1"]) p.type(k);
+    expect(p.type(PIN)).toBe("Limite du jour atteinte. Reste: 1 000 F.");
+    const q = play(world({ cashout: { ok: false, err: "OPEN_TRADE" } }));
+    for (const k of ["6", "2000", "1", "1"]) q.type(k);
+    expect(q.type(PIN)).toBe("Une operation avec un agent est deja en cours. Voir menu 5 ou 6.");
+  });
+
+  it("an open cash-out is shown first, whichever of 5 and 6 is pressed; confirming it asks for the code", () => {
+    for (const key of ["5", "6"]) {
+      const p = play(world({ trade: { ok: true, trade: { ...CASHOUT_LOCKED, state: "sent" } } }));
+      expect(p.type(key)).toBe("Retrait R9C3B0: avez-vous recu 2 000 F de Ndeye?\n1 Oui, recu\n2 Pas encore\n3 Litige");
+    }
+    const p = play(world({ trade: { ok: true, trade: { ...CASHOUT_LOCKED, state: "sent" } } }));
+    p.type("6");
+    expect(p.type("1")).toBe("Code secret:");
+    expect(p.type(PIN)).toBe("Merci. Retrait R9C3B0 termine.");
+    expect(p.effects.at(-1)).toEqual({ t: "tradeConfirm", tradeId: "t_2", pin: PIN });
+    const wait = play(world({ trade: { ok: true, trade: CASHOUT_LOCKED } }));
+    wait.type("6");
+    expect(wait.type("2")).toBe("D'accord. Revenez au menu 6 quand l'argent arrive.");
+    const dispute = play(world({ trade: { ok: true, trade: CASHOUT_LOCKED } }));
+    dispute.type("6");
+    expect(dispute.type("3")).toBe("Litige ouvert pour R9C3B0. Un arbitre vous contactera. Gardez votre reference de transfert.");
+    expect(dispute.effects.at(-1)).toEqual({ t: "dispute", tradeId: "t_2" });
+  });
+
+  it("an open cash-in shows where to send the francs, with a dispute and a cancel", () => {
+    const p = play(world({ trade: { ok: true, trade: CASHIN_HELD } }));
+    expect(p.type("5")).toBe("Depot D4F2A1: envoyez 2 000 F par Wave au 776665544 (Ndeye).\n1 Litige\n2 Annuler\n0 Menu");
+    expect(p.type("2")).toBe("Annule.");
+    expect(p.effects.at(-1)).toEqual({ t: "tradeCancel", tradeId: "t_1" });
+    const q = play(world({ trade: { ok: true, trade: CASHIN_HELD } }));
+    q.type("5");
+    expect(q.type("1")).toBe("Litige ouvert pour D4F2A1. Un arbitre vous contactera. Gardez votre reference de transfert.");
+    const r = play(world({ trade: { ok: true, trade: CASHIN_HELD } }));
+    r.type("5");
+    expect(r.type("0")).toBe(HOME);
+  });
+
+  it("a trade in the hands of the engine or the arbiter is shown and the session ends", () => {
+    const cases: Array<[TradeInfo, string]> = [
+      [{ ...CASHIN_HELD, state: "disputed" }, "D4F2A1: litige en cours. Un arbitre decide. Vous recevrez un SMS."],
+      [{ ...CASHIN_HELD, state: "released" }, "D4F2A1: litige en cours. Un arbitre decide. Vous recevrez un SMS."],
+      [{ ...CASHIN_HELD, state: "settling" }, "D4F2A1: operation en cours. Vous recevrez un SMS."],
+      [{ ...CASHOUT_LOCKED, state: "paying" }, "R9C3B0: operation en cours. Vous recevrez un SMS."],
+      [{ ...CASHOUT_LOCKED, state: "disputed" }, "R9C3B0: litige en cours. Un arbitre decide. Vous recevrez un SMS."],
+      [{ ...CASHIN_HELD, state: "open" }, "Depot D4F2A1: l'agent prepare les sats. Les instructions arrivent par SMS."],
+    ];
+    for (const [tr, text] of cases) {
+      const p = play(world({ trade: { ok: true, trade: tr } }));
+      expect(p.type("6"), tr.state).toBe(text);
+      expect(p.ended).toBe(true);
+    }
+  });
+});
+
+describe("the agent desk", () => {
+  it("is not in the menu of someone who is not an agent, and 4 does nothing there", () => {
+    const p = play();
+    expect(p.type("0")).toBe(HOME2);
+    expect(p.type("4")).toBe(HOME2);
+    expect(p.effects.some((e) => e.t === "desk")).toBe(false);
+    for (const role of ["user", "merchant"]) {
+      const q = play(world({ profile: { ok: true, registered: true, lang: "fr", name: "Awa", role } }));
+      expect(q.type("0")).toBe(HOME2);
+    }
+  });
+
+  it("an agent sees it on the second page, with the counts waiting", () => {
+    const p = play(agentWorld());
+    expect(p.type("0")).toBe("Melax\n4 Espace agent\n7 Bons\n8 Historique\n9 Mon compte\n0 Retour");
+    expect(p.type("4")).toBe("Espace agent\n1 Depots a confirmer (1)\n2 Retraits a payer (1)\n3 Ma caution\n4 Mon offre\n0 Retour");
+  });
+
+  it("confirming a cash-in asks the agent's code; saying no changes nothing", () => {
+    const p = play(agentWorld());
+    for (const k of ["0", "4"]) p.type(k);
+    expect(p.type("1")).toBe("D4F2A1: avez-vous recu 2 000 F de 77*****67 par Wave?\n1 Oui, recu\n2 Non");
+    expect(p.type("1")).toBe("Code secret:");
+    expect(p.type(PIN)).toBe("Depot D4F2A1 confirme. 4 950 sats livres au client.");
+    expect(p.effects.at(-1)).toEqual({ t: "deskAct", act: "confirm", tradeId: "t_1", pin: PIN });
+    const q = play(agentWorld());
+    for (const k of ["0", "4", "1"]) q.type(k);
+    expect(q.type("2")).toBe("D'accord. D4F2A1 reste ouvert jusqu'a son expiration.");
+    expect(q.effects.some((e) => e.t === "deskAct")).toBe(false);
+  });
+
+  it("a cash-out shows the number to pay; sent and decline both ask the code", () => {
+    const p = play(agentWorld());
+    for (const k of ["0", "4"]) p.type(k);
+    expect(p.type("2")).toBe("R9C3B0: envoyez 2 000 F par Wave au 771234567 (Awa).\n1 C'est envoye\n2 Refuser");
+    expect(p.type("1")).toBe("Code secret:");
+    expect(p.type(PIN)).toBe("Note. Le client doit confirmer la reception.");
+    expect(p.effects.at(-1)).toEqual({ t: "deskAct", act: "sent", tradeId: "t_2", pin: PIN });
+    const q = play(agentWorld());
+    for (const k of ["0", "4", "2", "2"]) q.type(k);
+    expect(q.type(PIN)).toBe("Retrait R9C3B0 annule.");
+    expect(q.effects.at(-1)).toEqual({ t: "deskAct", act: "decline", tradeId: "t_2", pin: PIN });
+  });
+
+  it("nothing waiting says so", () => {
+    const p = play(agentWorld({ deskNext: { ok: true, trade: null } }));
+    for (const k of ["0", "4"]) p.type(k);
+    expect(p.type("1")).toBe("Rien en attente.");
+  });
+
+  it("the bond: add with the code, take out with the code, refused while a trade is open", () => {
+    const p = play(agentWorld());
+    for (const k of ["0", "4"]) p.type(k);
+    expect(p.type("3")).toBe("Caution: 40 000 sats (16 000 F)\nDont en jeu: 4 950 sats\n1 Ajouter\n2 Tout retirer\n0 Menu");
+    expect(p.type("1")).toBe("Montant a mettre en caution (FCFA):");
+    expect(p.type("5000")).toBe("Code secret:");
+    expect(p.type(PIN)).toBe("Caution: 52 500 sats.");
+    const q = play(agentWorld({ bondOut: { ok: false, err: "OPEN_TRADE" } }));
+    for (const k of ["0", "4", "3", "2"]) q.type(k);
+    expect(q.type(PIN)).toBe("Impossible: un depot, un retrait ou un litige est ouvert.");
+    const r = play(agentWorld());
+    for (const k of ["0", "4", "3", "2"]) r.type(k);
+    expect(r.type(PIN)).toBe("Caution retiree: 40 000 sats. Votre offre est en pause.");
+  });
+
+  it("the offer can be read and switched off", () => {
+    const p = play(agentWorld());
+    for (const k of ["0", "4"]) p.type(k);
+    expect(p.type("4")).toBe("Offre: prime 1,5%, Wave, 500 F a 50 000 F. Active.\n1 Activer/Desactiver\n0 Menu");
+    expect(p.type("1")).toBe("En pause.");
   });
 });
 
@@ -294,12 +509,54 @@ describe("the secret code", () => {
   });
 
   it("no state holds a code once its effect has run, in any flow", () => {
-    const flows = [["1", PIN, "0"], ["2", "781112233", "500", "1", PIN], ["8", PIN, "1", "0"], ["9", "1", "1", PIN, NEW_PIN, NEW_PIN], ["9", "3", "1", "awa-dakar", PIN]];
+    const flows = [["1", PIN, "0"], ["2", "781112233", "500", "1", PIN], ["8", PIN, "1", "0"], ["9", "1", "1", PIN, NEW_PIN, NEW_PIN], ["9", "3", "1", "awa-dakar", PIN], ["6", "2000", "1", "1", PIN]];
     for (const flow of flows) {
       const p = play();
       for (const k of flow) p.type(k);
       expect(JSON.stringify(p.state), flow.join(">")).not.toContain(PIN);
       expect(JSON.stringify(p.state), flow.join(">")).not.toContain(NEW_PIN);
+    }
+    // the user confirming a cash-out, and every code prompt of the agent desk
+    const withTrade = () => world({ trade: { ok: true, trade: { ...CASHOUT_LOCKED, state: "sent" } } });
+    const deskFlows: Array<[() => ReturnType<typeof world>, string[]]> = [
+      [withTrade, ["6", "1", PIN]],
+      [agentWorld, ["0", "4", "1", "1", PIN]],
+      [agentWorld, ["0", "4", "2", "1", PIN]],
+      [agentWorld, ["0", "4", "2", "2", PIN]],
+      [agentWorld, ["0", "4", "3", "1", "5000", PIN]],
+      [agentWorld, ["0", "4", "3", "2", PIN]],
+    ];
+    for (const [respond, flow] of deskFlows) {
+      const p = play(respond());
+      for (const k of flow) p.type(k);
+      expect(p.ended, flow.join(">")).toBe(true);
+      expect(JSON.stringify(p.state), flow.join(">")).not.toContain(PIN);
+    }
+  });
+
+  it("every new step that reads a code is in PIN_STEPS", () => {
+    for (const at of ["wd.pin", "wd.cpin", "desk.in.pin", "desk.out.pin", "bond.pin", "bondout.pin"] as const) expect(PIN_STEPS.has(at), at).toBe(true);
+    // and the screen before each of them is not
+    for (const at of ["wd.confirm", "wd.view", "desk.in", "desk.out", "bond.show", "bond.amount"] as const) expect(PIN_STEPS.has(at), at).toBe(false);
+  });
+
+  it("a wrong code on any new money step goes back to its own code prompt with the tries left", () => {
+    const wrong: Res = { ok: false, err: "PIN_WRONG", left: 2 };
+    const cases: Array<[ReturnType<typeof world>, string[]]> = [
+      [world({ cashout: wrong }), ["6", "2000", "1", "1"]],
+      [world({ trade: { ok: true, trade: CASHOUT_LOCKED }, tradeConfirm: wrong }), ["6", "1"]],
+      [agentWorld({ deskAct: wrong }), ["0", "4", "1", "1"]],
+      [agentWorld({ deskAct: wrong }), ["0", "4", "2", "1"]],
+      [agentWorld({ bondAdd: wrong }), ["0", "4", "3", "1", "5000"]],
+      [agentWorld({ bondOut: wrong }), ["0", "4", "3", "2"]],
+    ];
+    for (const [respond, flow] of cases) {
+      const p = play(respond);
+      for (const k of flow) p.type(k);
+      const at = p.state.at;
+      expect(p.type("11111"), flow.join(">")).toBe("Code faux. Essais restants: 2.\nCode secret:");
+      expect(p.state.at, flow.join(">")).toBe(at);
+      expect(JSON.stringify(p.state)).not.toContain("11111");
     }
   });
 });
@@ -463,11 +720,28 @@ describe("picking up a dropped session", () => {
     ["9", "3", "1", "awa-dakar"],
     ["9", "5"],
     ["0"],
+    ["5", "2000", "1", "1"],
+    ["6", "2000", "1", "1", "00000"],
+    ["6", "1", "00000"],
+    ["5", "1"],
+    ["0", "4", "1", "1", "00000"],
+    ["0", "4", "2", "2", "00000"],
+    ["0", "4", "3", "1", "5000", "00000"],
+    ["0", "4", "3", "2", "00000"],
+    ["0", "4", "4", "1"],
   ];
 
   it("never resumes at a code prompt, and never with a code in the state", () => {
     let checked = 0;
-    const responders = [world(), world({ send: { ok: false, err: "PIN_WRONG", left: 4 } }), world({}, "fr", false)];
+    const wrong: Res = { ok: false, err: "PIN_WRONG", left: 4 };
+    const responders = [
+      world(),
+      world({ send: wrong, cashout: wrong }),
+      world({}, "fr", false),
+      agentWorld({ deskAct: wrong, bondAdd: wrong, bondOut: wrong }),
+      world({ trade: { ok: true, trade: CASHOUT_LOCKED }, tradeConfirm: wrong }),
+      world({ trade: { ok: true, trade: CASHIN_HELD } }),
+    ];
     for (const respond of responders) {
       for (const flow of [...flows, ["1", PIN, PIN, "Awa"]]) {
         const p = play(respond);
@@ -506,6 +780,10 @@ describe("picking up a dropped session", () => {
     expect(at(["9", "3", "1", "awa-dakar"])).toBe("acct");
     expect(at(["9"])).toBe("acct");
     expect(at([])).toBe(null); // the first menu is where a fresh dial starts anyway
+    expect(at(["6", "2000", "1", "1"])).toBe("wd.confirm");
+    expect(at(["6", "2000", "1"])).toBe("wd.confirm");
+    expect(at(["5", "2000", "1"])).toBe("dep.confirm");
+    expect(at(["5", "2000"])).toBe(null); // the agent list is drawn again on a fresh dial
   });
 
   it("through the runtime: a session dropped at the code prompt is offered again at the confirm screen", async () => {
@@ -559,7 +837,15 @@ describe("picking up a dropped session", () => {
 
 describe("every screen fits a phone in all three languages", () => {
   const LANG_KEY: Record<Lang, string> = { fr: "1", wo: "2", en: "3" };
-  const flows: Record<string, { inputs: (l: Lang) => string[]; registered?: boolean }> = {
+  const flows: Record<string, { inputs: (l: Lang) => string[]; registered?: boolean; respond?: (l: Lang) => Responder }> = {
+    "cash-in": { inputs: () => ["5", "2000", "1", "1"] },
+    "cash-in-open": { inputs: () => ["5", "0"], respond: (l) => world({ trade: { ok: true, trade: CASHIN_HELD } }, l) },
+    "cash-out": { inputs: () => ["6", "2000", "1", "1", PIN] },
+    "cash-out-confirm": { inputs: () => ["6", "1", PIN], respond: (l) => world({ trade: { ok: true, trade: { ...CASHOUT_LOCKED, state: "sent" } } }, l) },
+    "agent-cash-in": { inputs: () => ["0", "4", "1", "1", PIN], respond: (l) => agentWorld({}, l) },
+    "agent-cash-out": { inputs: () => ["0", "4", "2", "1", PIN], respond: (l) => agentWorld({}, l) },
+    "agent-bond": { inputs: () => ["0", "4", "3", "1", "5000", PIN], respond: (l) => agentWorld({}, l) },
+    "agent-offer": { inputs: () => ["0", "4", "4", "1"], respond: (l) => agentWorld({}, l) },
     onboarding: { inputs: (l) => [LANG_KEY[l], PIN, PIN, "Awa"], registered: false },
     home: { inputs: () => ["0", "0"] },
     balance: { inputs: () => ["1", PIN, "0"] },
@@ -576,7 +862,7 @@ describe("every screen fits a phone in all three languages", () => {
   for (const [name, flow] of Object.entries(flows)) {
     for (const lang of LANGS) {
       it(`${name} in ${lang} matches its golden file`, async () => {
-        const p = play(world({}, lang, flow.registered ?? true));
+        const p = play(flow.respond ? flow.respond(lang) : world({}, lang, flow.registered ?? true));
         const lines = [`dial ${CODE}`, p.text];
         for (const k of flow.inputs(lang)) {
           // codes are written as stars in the golden files, the way a careful person would copy them
@@ -608,6 +894,40 @@ describe("every screen fits a phone in all three languages", () => {
       for (const inputs of [["1", PIN], ["2", "781112233", "9999999", "1", PIN], ["3"], ["8", PIN, "1"], ["9", "3", "1", "abcdefghijklmnopqrst", PIN], ["9", "5"]]) {
         const p = play(worst(lang));
         for (const k of inputs) p.type(k); // play() checks GSM-7 and 160 characters on every screen
+        expect(p.text.length).toBeGreaterThan(0);
+      }
+      // the agent flows, with the longest names, the longest method and the largest amounts
+      const longTrade: TradeInfo = { id: "t_x", ref: "DFFFFFF", kind: "cashin", state: "held", fcfa: 9_999_999, sats: 999_999_999, lockSats: 999_999_999, method: "om", agent: long, name: long, masked: "+2250*******89", number: "+225070000000089" };
+      const longOffer = { agentId: "u_x", name: long, method: "om", sats: 999_999_999 };
+      const agentWorst = (over: Over) =>
+        world(
+          {
+            profile: { ...AGENT_PROFILE, lang },
+            offers: { ok: true, offers: [longOffer, longOffer, longOffer] },
+            cashin: { ok: true, trade: longTrade },
+            cashout: { ok: true, trade: { ...longTrade, kind: "cashout", state: "locked" } },
+            deskNext: { ok: true, trade: { ...longTrade, kind: "cashout", state: "locked" } },
+            deskAct: { ok: true, trade: { ...longTrade, state: "done" } },
+            desk: { ok: true, nIn: 999, nOut: 999 },
+            bond: { ok: true, bondSats: 999_999_999, bondFcfa: 99_999_999, bondedSats: 999_999_999 },
+            bondAdd: { ok: true, sats: 999_999_999 },
+            offer: { ok: true, offer: { premiumBp: 1000, method: "om", minFcfa: 9_999_999, maxFcfa: 9_999_999, active: false } },
+            ...over,
+          },
+          lang,
+        );
+      for (const [over, inputs] of [
+        [{}, ["5", "9999999", "3", "1"]],
+        [{}, ["6", "9999999", "3", "1", PIN]],
+        [{ trade: { ok: true, trade: longTrade } }, ["5"]],
+        [{ trade: { ok: true, trade: { ...longTrade, kind: "cashout", state: "sent" } } }, ["6", "3"]],
+        [{}, ["0", "4", "2", "1", PIN]],
+        [{ deskNext: { ok: true, trade: longTrade } }, ["0", "4", "1", "1", PIN]],
+        [{}, ["0", "4", "3", "1", "9999999", PIN]],
+        [{}, ["0", "4", "4"]],
+      ] as Array<[Over, string[]]>) {
+        const p = play(agentWorst(over));
+        for (const k of inputs) if (!p.ended) p.type(k);
         expect(p.text.length).toBeGreaterThan(0);
       }
       for (const res of [

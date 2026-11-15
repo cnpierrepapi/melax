@@ -50,6 +50,13 @@ services:
       MINT_MAX_BALANCE: "20000000"
       MINT_MAX_MINT_BOLT11_SAT: "2000000"
       MINT_MAX_MELT_BOLT11_SAT: "2000000"
+      # Nutshell's watchdog stops the mint when the gap between its node's balance and the ecash it issued
+      # shrinks. A deposit is two calls (pay the quote, then collect the ecash); a check that lands between
+      # them sees the gap grow, and the next one sees it shrink. That stopped this mint on 15 Nov 2026 in
+      # the middle of a test run, and every restart compared against the same reading (defect 52).
+      # Mismatches are still logged and the readings still stored; the mint no longer shuts down on them.
+      # Regtest choice, decision 67. The reserve check of phase 10 must count paid quotes not yet collected.
+      MINT_WATCHDOG_IGNORE_MISMATCH: "True"
       # Rate limits are per client address, and every Melax user reaches the mint through one gateway.
       # The mint operator sets these knowing that; a public mint would allow-list the gateway instead.
       MINT_RATE_LIMIT: "TRUE"

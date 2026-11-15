@@ -1,0 +1,33 @@
+dial #2580#
+Melax
+1 Sa xaalis
+2 Yonnee
+3 Jot
+4 Fey jaaykat
+5 Dugal xaalis
+6 Genne xaalis
+0 Yeneen
+
+> 0
+Melax
+4 Agent
+7 Bon yi
+8 Li weesu
+9 Sama kont
+0 Dellu
+
+> 4
+Agent
+1 Dugal yu war a wer (1)
+2 Genne yu war a fey (1)
+3 Sama garanti
+4 Sama of
+0 Dellu
+
+> 4
+Of: 1,5%, Wave, 500 F ba 50 000 F. Taal na.
+1 Taal/Fey
+0 Menu
+
+> 1
+Fey na.

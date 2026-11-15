@@ -86,4 +86,63 @@ export const gatewayMigrations: Migration[] = [
        )`,
     ],
   },
+  {
+    name: "gateway/002-agents",
+    sql: [
+      // An agent is a user with a mobile-money account and a Lightning wallet of their own. The
+      // mobile-money number is sealed (purpose agent:momo:<userId>); the masked copy is for screens.
+      // wallet_kind 'world' is the regtest node that plays everybody else (demo only); 'nwc' is a
+      // wallet linked by Nostr Wallet Connect, its connection string sealed (purpose agent:wallet:<userId>).
+      `CREATE TABLE agents (
+         user_id TEXT PRIMARY KEY REFERENCES users(id),
+         momo_sealed BYTEA NOT NULL,
+         momo_masked TEXT NOT NULL,
+         method TEXT NOT NULL CHECK (method IN ('wave', 'om', 'free', 'cash')),
+         premium_bp INT NOT NULL CHECK (premium_bp >= 0 AND premium_bp <= 1000),
+         min_fcfa BIGINT NOT NULL CHECK (min_fcfa > 0),
+         max_fcfa BIGINT NOT NULL CHECK (max_fcfa >= min_fcfa),
+         active BOOLEAN NOT NULL DEFAULT TRUE,
+         wallet_kind TEXT NOT NULL CHECK (wallet_kind IN ('world', 'nwc')),
+         wallet_sealed BYTEA,
+         created_at BIGINT NOT NULL
+       )`,
+      // One row per cash-in or cash-out. `state` moves only as escrow/trade.ts allows, with
+      // UPDATE ... WHERE state = <current>. The preimage of a cash-in's hold invoice is sealed
+      // (purpose trade:preimage:<id>) and leaves the table in one function, the one that settles.
+      // deadline_at is when the current wait ends (or when a retry is due). hard_cap_at: a held
+      // cash-in payment is released by then whatever happens. watch: a closed cash-in whose invoice
+      // is still watched, so a payment that arrives late is cancelled on sight.
+      `CREATE TABLE trades (
+         id TEXT PRIMARY KEY,
+         ref TEXT NOT NULL UNIQUE,
+         idem_key TEXT NOT NULL UNIQUE,
+         kind TEXT NOT NULL CHECK (kind IN ('cashin', 'cashout')),
+         state TEXT NOT NULL,
+         user_id TEXT NOT NULL REFERENCES users(id),
+         agent_id TEXT NOT NULL REFERENCES agents(user_id),
+         fcfa BIGINT NOT NULL CHECK (fcfa > 0),
+         sats BIGINT NOT NULL CHECK (sats > 0),
+         lock_sats BIGINT NOT NULL CHECK (lock_sats >= sats),
+         rate BIGINT NOT NULL CHECK (rate > 0),
+         method TEXT NOT NULL,
+         payment_hash TEXT UNIQUE,
+         preimage_sealed BYTEA,
+         bolt11 TEXT,
+         invoice_expires_at BIGINT,
+         held_at BIGINT,
+         deadline_at BIGINT NOT NULL,
+         hard_cap_at BIGINT,
+         attempt INT NOT NULL DEFAULT 0,
+         watch BOOLEAN NOT NULL DEFAULT FALSE,
+         winner TEXT CHECK (winner IN ('user', 'agent')),
+         created_at BIGINT NOT NULL,
+         updated_at BIGINT NOT NULL
+       )`,
+      // One open trade per user: a second start loses on this index, whatever the timing.
+      `CREATE UNIQUE INDEX trades_one_open ON trades(user_id) WHERE state NOT IN ('done', 'expired', 'rejected', 'refunded', 'failed')`,
+      `CREATE INDEX trades_agent ON trades(agent_id, state)`,
+      `CREATE INDEX trades_due ON trades(state, deadline_at)`,
+      `CREATE INDEX trades_watch ON trades(watch) WHERE watch`,
+    ],
+  },
 ];

@@ -76,6 +76,24 @@ export function buildHttp(app: App, opts: { web?: StaticFiles } = {}): FastifyIn
     http.post("/ussd/http", async (req) => provider.handle(raw(req.body), { signature: header(req.headers["x-signature"]), timestamp: header(req.headers["x-timestamp"]) }));
   }
 
+  // ---------- the arbiter ----------
+
+  if (config.operatorSecret) {
+    const secret = config.operatorSecret;
+    // A wrong or missing secret gets the answer a path that does not exist gets.
+    http.post("/ops/escrow/decide", async (req, reply) => {
+      const auth = header(req.headers.authorization) ?? "";
+      if (!auth.startsWith("Bearer ") || !constantTimeEqual(auth.slice(7), secret)) return reply.code(404).send({ error: "not_found" });
+      const j = JSON.parse(raw(req.body)) as { tradeId?: unknown; winner?: unknown; arbiter?: unknown; note?: unknown } | null;
+      const r = await app.escrow.decide({ tradeId: String(j?.tradeId ?? ""), winner: j?.winner as "user" | "agent", arbiter: String(j?.arbiter ?? ""), note: typeof j?.note === "string" ? j.note : "" });
+      if (r.ok) return { ok: true, state: r.trade.state };
+      if (r.err === "BAD_INPUT") return reply.code(400).send({ error: "bad_request" });
+      if (r.err === "NOT_FOUND") return reply.code(404).send({ error: "not_found" });
+      if (r.err === "STATE") return reply.code(409).send({ error: "conflict" });
+      return reply.code(503).send({ error: "unavailable" });
+    });
+  }
+
   // ---------- SMS webhooks ----------
 
   if (config.smsIn.asgSigningKey) {

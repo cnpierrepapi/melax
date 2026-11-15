@@ -1,0 +1,33 @@
+dial #2580#
+Melax
+1 Balance
+2 Send
+3 Receive
+4 Pay a shop
+5 Cash in
+6 Cash out
+0 More
+
+> 0
+Melax
+4 Agent desk
+7 Vouchers
+8 History
+9 My account
+0 Back
+
+> 4
+Agent desk
+1 Cash-ins to confirm (1)
+2 Cash-outs to pay (1)
+3 My bond
+4 My offer
+0 Back
+
+> 4
+Offer: premium 1.5%, Wave, 500 F to 50 000 F. On.
+1 Turn on/off
+0 Menu
+
+> 1
+Paused.

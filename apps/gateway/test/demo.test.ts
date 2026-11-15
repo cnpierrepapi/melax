@@ -111,7 +111,8 @@ describe("the seed and /sim/people", () => {
     expect(r.code).toBe(DEMO_PIN);
     expect(r.ussd).toBe("#2580#");
     expect(r.topUp).toEqual({ on: false, capFcfa: FUND_CAP_FCFA });
-    expect(r.people.map((p) => p.name)).toEqual(DEMO_PEOPLE.map((p) => p.name));
+    // the two agents at the end of DEMO_PEOPLE are seeded by seedAgents, which needs the world node
+    expect(r.people.map((p) => p.name)).toEqual(DEMO_PEOPLE.filter((p) => !p.agent).map((p) => p.name));
     expect(r.people).toHaveLength(6);
     for (const p of r.people) expect(p.phone).toMatch(/^7[05678]\d{7}$/);
   });

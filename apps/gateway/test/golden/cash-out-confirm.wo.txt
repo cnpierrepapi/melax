@@ -1,0 +1,21 @@
+dial #2580#
+Melax
+1 Sa xaalis
+2 Yonnee
+3 Jot
+4 Fey jaaykat
+5 Dugal xaalis
+6 Genne xaalis
+0 Yeneen
+
+> 6
+Genne R9C3B0: ndax jot nga 2 000 F ci Ndeye?
+1 Waaw, jot naa
+2 Deedeet
+3 Am na jafe-jafe
+
+> 1
+Sa kod:
+
+> *****
+Jerejef. Genne R9C3B0 jeex na.

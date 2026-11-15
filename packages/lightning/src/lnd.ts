@@ -191,9 +191,15 @@ export class LndBackend implements LightningBackend {
     return { paymentHash: hexOfB64(r.r_hash), bolt11: r.payment_request, amountSat: req.amountSat, expiresAt: Date.now() + expiry * 1000 };
   }
 
-  async makeHoldInvoice(req: { amountSat: number; paymentHash: string; memo?: string; expirySec?: number }): Promise<Invoice> {
+  async makeHoldInvoice(req: { amountSat: number; paymentHash: string; memo?: string; expirySec?: number; cltvExpiry?: number }): Promise<Invoice> {
     const expiry = req.expirySec ?? 3600;
-    const r = await this.request<{ payment_request: string }>("POST", "/v2/invoices/hodl", { hash: b64(req.paymentHash), value: String(req.amountSat), memo: req.memo, expiry: String(expiry) });
+    const r = await this.request<{ payment_request: string }>("POST", "/v2/invoices/hodl", {
+      hash: b64(req.paymentHash),
+      value: String(req.amountSat),
+      memo: req.memo,
+      expiry: String(expiry),
+      cltv_expiry: req.cltvExpiry === undefined ? undefined : String(req.cltvExpiry),
+    });
     if (this.listeners.size > 0) this.watchOne(req.paymentHash);
     return { paymentHash: req.paymentHash, bolt11: r.payment_request, amountSat: req.amountSat, expiresAt: Date.now() + expiry * 1000 };
   }

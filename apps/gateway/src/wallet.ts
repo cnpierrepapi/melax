@@ -125,7 +125,8 @@ export class Wallet {
     return tierFor({ accountAgeMs: this.d.clock.now() - user.createdAt, guardians: 0 });
   }
 
-  private async limitCheck(user: User, toRef: string, amountFcfa: number) {
+  /** The day, month, per-operation and first-payment limits for a spend of `amountFcfa` to `toRef`. Cash-outs ask it too (escrow/engine.ts). */
+  async limitCheck(user: User, toRef: string, amountFcfa: number) {
     const spent = await this.spent(user.id);
     const paidBefore = await this.d.db.query("SELECT 1 FROM txlog WHERE user_id = $1 AND counterparty_id = $2 AND spend LIMIT 1", [user.id, toRef]);
     return checkSpend({ tier: this.tier(user), amountFcfa, spentTodayFcfa: spent.today, spentMonthFcfa: spent.month, newRecipient: paidBefore.length === 0 });
@@ -164,8 +165,11 @@ export class Wallet {
 
   // ---------- send ----------
 
-  /** Runs `fn` after every earlier call for the same key has finished, whatever its outcome. */
-  private serial<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  /**
+   * Runs `fn` after every earlier call for the same key has finished, whatever its outcome. Keyed by user
+   * id, it is the one queue for everything that checks a limit and then spends: sends and cash-outs.
+   */
+  serial<T>(key: string, fn: () => Promise<T>): Promise<T> {
     const prev = this.chains.get(key) ?? Promise.resolve();
     const next = prev.then(fn, fn);
     this.chains.set(key, next);
@@ -338,7 +342,7 @@ export class Wallet {
    * Queue one SMS in the user's language. A text that cannot be built is logged and skipped: a broken
    * sentence must never be the reason a settlement rolls back and leaves money locked.
    */
-  private async text(tx: Db, user: User, kind: string, key: MessageKey, vars: Record<string, string | number>): Promise<void> {
+  async text(tx: Db, user: User, kind: string, key: MessageKey, vars: Record<string, string | number>): Promise<void> {
     let body: string;
     try {
       body = assertGsm7(t(user.lang, key, vars));

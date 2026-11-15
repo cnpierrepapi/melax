@@ -23,15 +23,22 @@ export const FUND_CAP_FCFA = 25_000;
 export const FUND_MIN_FCFA = 100;
 const STATE_ENTRIES = 20;
 
-/** Six people at a market in Dakar. The numbers are made up. */
-export const DEMO_PEOPLE: ReadonlyArray<{ name: string; phone: string; lang: Lang; fcfa: number }> = [
+/**
+ * Six people at a market in Dakar, then two agents. The numbers are made up. An agent's `momo` is the
+ * mobile-money number the users of a cash-in are told to pay; `bondFcfa` goes from their balance into
+ * their bond. Add people at the end: the browser tests use these by position and by name.
+ */
+export const DEMO_PEOPLE: ReadonlyArray<{ name: string; phone: string; lang: Lang; fcfa: number; agent?: { momo: string; method: "wave" | "om"; premiumBp: number; bondFcfa: number } }> = [
   { name: "Awa", phone: "+221770000101", lang: "fr", fcfa: 15_000 },
   { name: "Moussa", phone: "+221780000102", lang: "wo", fcfa: 8000 },
   { name: "Fatou", phone: "+221760000103", lang: "fr", fcfa: 12_000 },
   { name: "Ibrahima", phone: "+221770000104", lang: "wo", fcfa: 5000 },
   { name: "Aminata", phone: "+221700000105", lang: "en", fcfa: 20_000 },
   { name: "Cheikh", phone: "+221750000106", lang: "fr", fcfa: 3000 },
+  { name: "Ndeye", phone: "+221770000107", lang: "fr", fcfa: 25_000, agent: { momo: "+221776665544", method: "wave", premiumBp: 100, bondFcfa: 20_000 } },
+  { name: "Ousmane", phone: "+221780000108", lang: "wo", fcfa: 25_000, agent: { momo: "+221786665533", method: "om", premiumBp: 150, bondFcfa: 20_000 } },
 ];
+export const DEMO_AGENT_RANGE = { minFcfa: 500, maxFcfa: 20_000 };
 /** A morning's payments between them, as [from, to, FCFA], so nobody's history is empty. */
 const DEMO_SENDS: ReadonlyArray<readonly [number, number, number]> = [
   [0, 2, 2500],
@@ -110,7 +117,8 @@ export async function fundAccount(app: App, world: LightningBackend, a: { phone:
  */
 export async function seedDemo(app: App): Promise<{ seeded: boolean; funded: boolean }> {
   if ((await app.db.query("SELECT 1 FROM users LIMIT 1")).length > 0) return { seeded: false, funded: false };
-  for (const p of DEMO_PEOPLE) await app.users.register({ phone: p.phone, pin: DEMO_PIN, name: p.name, lang: p.lang });
+  const shoppers = DEMO_PEOPLE.filter((p) => !p.agent); // the agents are seedAgents' job
+  for (const p of shoppers) await app.users.register({ phone: p.phone, pin: DEMO_PIN, name: p.name, lang: p.lang });
   const world = app.world;
   if (!world) {
     app.log.warn("demo.seed.no_world", {});
@@ -118,7 +126,7 @@ export async function seedDemo(app: App): Promise<{ seeded: boolean; funded: boo
   }
 
   let funded = true;
-  for (const p of DEMO_PEOPLE) {
+  for (const p of shoppers) {
     const r = await fundAccount(app, world, { phone: p.phone, fcfa: p.fcfa });
     if (!r.ok) {
       app.log.error("demo.seed.fund_failed", { reason: r.err });
@@ -136,8 +144,42 @@ export async function seedDemo(app: App): Promise<{ seeded: boolean; funded: boo
       funded = false;
     }
   }
-  app.log.info("demo.seed.done", { accounts: DEMO_PEOPLE.length, funded });
+  app.log.info("demo.seed.done", { accounts: shoppers.length, funded });
   return { seeded: true, funded };
+}
+
+/**
+ * The two demo agents: an account, a top-up, the agent's offer, and a bond. Each part is done only if it
+ * is missing, so this runs on every start and also completes a database seeded before agents existed.
+ * The agents' wallet is the regtest world node. Without it there is nothing to seed.
+ */
+export async function seedAgents(app: App): Promise<{ agents: number }> {
+  const world = app.world;
+  if (!world) return { agents: 0 };
+  let n = 0;
+  for (const p of DEMO_PEOPLE) {
+    if (!p.agent) continue;
+    try {
+      let user = await app.users.findByPhone(p.phone);
+      if (!user) {
+        user = await app.users.register({ phone: p.phone, pin: DEMO_PIN, name: p.name, lang: p.lang });
+        const r = await fundAccount(app, world, { phone: p.phone, fcfa: p.fcfa });
+        if (!r.ok) app.log.error("demo.agent.fund_failed", { reason: r.err });
+      }
+      if (!(await app.agents.get(user.id))) {
+        await app.agents.enroll({ userId: user.id, momo: p.agent.momo, method: p.agent.method, premiumBp: p.agent.premiumBp, ...DEMO_AGENT_RANGE, wallet: { kind: "world" } });
+      }
+      if ((await app.agents.bondSats(user.id)) === 0) {
+        const fresh = (await app.users.byId(user.id))!;
+        const r = await app.escrow.bondAdd({ agent: fresh, fcfa: p.agent.bondFcfa, pin: DEMO_PIN, idemKey: `seed:bond:${user.id}:${app.clock.now()}` });
+        if (!r.ok) app.log.error("demo.agent.bond_failed", { reason: r.err });
+      }
+      n++;
+    } catch (err) {
+      app.log.error("demo.agent.seed_failed", { err });
+    }
+  }
+  return { agents: n };
 }
 
 // ---------- the routes ----------
@@ -162,10 +204,10 @@ export function mountDemo(http: FastifyInstance, app: App): void {
   });
 
   http.get("/sim/people", async () => {
-    const people: Array<{ name: string; phone: string; lang: Lang }> = [];
+    const people: Array<{ name: string; phone: string; lang: Lang; agent: boolean }> = [];
     for (const p of DEMO_PEOPLE) {
       const u = await app.users.findByPhone(p.phone);
-      if (u) people.push({ name: u.name, phone: p.phone.replace("+221", ""), lang: u.lang });
+      if (u) people.push({ name: u.name, phone: p.phone.replace("+221", ""), lang: u.lang, agent: u.role === "agent" });
     }
     return { code: DEMO_PIN, ussd: config.ussdCode, topUp: { on: world !== undefined, capFcfa: FUND_CAP_FCFA }, people };
   });
@@ -195,6 +237,18 @@ export function mountDemo(http: FastifyInstance, app: App): void {
       mint: { name: app.mint.name, keyset: app.mint.keysetId },
       rate: rate ? { xofPerBtc: rate.xofPerBtc, source: rate.source } : null,
     };
+  });
+
+  // The arbiter's button of the demo: anyone holding the page decides a dispute, by its reference.
+  http.post("/sim/decide", async (req, reply) => {
+    const j = JSON.parse(typeof req.body === "string" ? req.body : "") as { ref?: unknown; winner?: unknown } | null;
+    const trade = typeof j?.ref === "string" ? await app.escrow.byRef(j.ref) : null;
+    if (!trade) return reply.code(404).send({ error: "not_found" });
+    const r = await app.escrow.decide({ tradeId: trade.id, winner: j?.winner as "user" | "agent", arbiter: "demo", note: "" });
+    if (r.ok) return { ok: true, state: r.trade.state };
+    if (r.err === "BAD_INPUT") return reply.code(400).send({ error: "bad_request" });
+    if (r.err === "STATE") return reply.code(409).send({ error: "conflict" });
+    return reply.code(503).send({ error: "unavailable" });
   });
 
   if (world) {

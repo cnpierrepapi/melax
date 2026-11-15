@@ -51,7 +51,13 @@ export interface Balance {
 export interface LightningBackend {
   capabilities(): Promise<Capabilities>;
   makeInvoice(req: { amountSat: number; memo?: string; descriptionHash?: string; expirySec?: number }): Promise<Invoice>;
-  makeHoldInvoice(req: { amountSat: number; paymentHash: string; memo?: string; expirySec?: number }): Promise<Invoice>;
+  /**
+   * `cltvExpiry` is the block delta of the final hop: it bounds how long a payment can stay held. LND
+   * cancels a held payment on its own about 18 to 21 blocks before that delta runs out (measured with
+   * scripts/probe/hold-cltv-probe.ts: LND's default of 80 kept a payment held 65 blocks). NWC has no
+   * such field; the connected wallet's own policy applies.
+   */
+  makeHoldInvoice(req: { amountSat: number; paymentHash: string; memo?: string; expirySec?: number; cltvExpiry?: number }): Promise<Invoice>;
   settle(preimageHex: string): Promise<void>;
   /**
    * Returns held sats to the payer. Resolves true when the invoice is now cancelled.

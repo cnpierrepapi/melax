@@ -1,0 +1,36 @@
+dial #2580#
+Melax
+1 Sa xaalis
+2 Yonnee
+3 Jot
+4 Fey jaaykat
+5 Dugal xaalis
+6 Genne xaalis
+0 Yeneen
+
+> 0
+Melax
+4 Agent
+7 Bon yi
+8 Li weesu
+9 Sama kont
+0 Dellu
+
+> 4
+Agent
+1 Dugal yu war a wer (1)
+2 Genne yu war a fey (1)
+3 Sama garanti
+4 Sama of
+0 Dellu
+
+> 2
+R9C3B0: yonneel 2 000 F ci Wave ci 771234567 (Awa).
+1 Yonnee naa
+2 Bayyi
+
+> 1
+Sa kod:
+
+> *****
+Bind nanu ko. Kliyan bi war na wax ne jot na.

@@ -10,9 +10,12 @@ import { MintClient } from "@melax/cashu";
 import { shortDate } from "@melax/i18n";
 import { type Db, balance, truncateAll, verifyLedger } from "@melax/ledger";
 import { LndBackend } from "@melax/lightning";
-import { DEMO_PEOPLE, DEMO_PIN, seedDemo } from "../src/demo.ts";
+import { DEMO_PEOPLE, DEMO_PIN, seedAgents, seedDemo } from "../src/demo.ts";
 import { buildHttp } from "../src/http.ts";
 import { type TestApp, dial, inbox, logWords, newDb, signUp, testApp } from "./helpers.ts";
+
+/** The six people seedDemo opens. The two agents after them are seedAgents' job. */
+const SHOPPERS = DEMO_PEOPLE.filter((p) => !p.agent);
 
 const keys = resolve(import.meta.dirname, "../../../.keys");
 const lnd = (name: string, port: number) =>
@@ -194,7 +197,7 @@ describe("the seed", () => {
 
     // 1 BTC = 40 000 000 F in tests: 1 F is 2.5 sats. Top-ups, then the five payments.
     const expected: Record<string, number> = { Awa: 15_000 - 2500 + 500, Moussa: 8000 + 1000 - 500, Fatou: 12_000 + 2500 - 1000, Ibrahima: 5000 - 1500, Aminata: 20_000 - 3000 + 1500, Cheikh: 3000 + 3000 };
-    for (const p of DEMO_PEOPLE) {
+    for (const p of SHOPPERS) {
       expect(await sats(p.phone), p.name).toBe(expected[p.name]! * 2.5);
       const rows = await db.query("SELECT 1 FROM txlog WHERE user_id = $1", [await idOf(p.phone)]);
       expect(rows.length, p.name).toBeGreaterThanOrEqual(2);
@@ -221,7 +224,7 @@ describe("the seed", () => {
     expect(state.entries).toHaveLength(20);
     expect(state.entries[0]!.kind).toBe("vault.transfer");
     expect(state.entries[0]!.lines.map((l) => l.account)).toEqual(["Ibrahima:locked", "Aminata:spendable"]);
-    for (const p of DEMO_PEOPLE) {
+    for (const p of SHOPPERS) {
       const id = await idOf(p.phone);
       expect(r.body, p.name).not.toContain(id);
       expect(r.body, p.name).not.toContain(p.phone.slice(4));
@@ -231,6 +234,28 @@ describe("the seed", () => {
       }
     }
     for (const fragment of ["+221", "recv:", "mint:", "seed:", "lnbcrt", "cashu"]) expect(r.body, fragment).not.toContain(fragment);
+  }, 240_000);
+});
+
+describe("the seeded agents", () => {
+  it("are opened, funded, enrolled and bonded once, on a database seeded before agents existed too", async () => {
+    expect(await seedDemo(T.app)).toMatchObject({ seeded: true });
+    expect(await seedAgents(T.app)).toEqual({ agents: 2 });
+    const people = (await http.inject({ method: "GET", url: "/sim/people" })).json() as { people: Array<{ name: string; agent: boolean }> };
+    expect(people.people.map((p) => [p.name, p.agent])).toEqual(DEMO_PEOPLE.map((p) => [p.name, p.agent !== undefined]));
+    for (const p of DEMO_PEOPLE.filter((x) => x.agent)) {
+      const id = await idOf(p.phone);
+      expect(await T.app.agents.bondSats(id), p.name).toBe(p.agent!.bondFcfa * 2.5);
+      expect(await sats(p.phone), p.name).toBe((p.fcfa - p.agent!.bondFcfa) * 2.5);
+    }
+    // again: nothing new
+    expect(await seedAgents(T.app)).toEqual({ agents: 2 });
+    expect(await db.query("SELECT 1 FROM users")).toHaveLength(8);
+    expect(await db.query("SELECT 1 FROM ops WHERE kind = 'transfer' AND owner LIKE 'user:%' AND data->'meta'->>'t' = 'bond_in'")).toHaveLength(2);
+    // a cash-in offer from each, best first
+    const awa = (await T.app.users.findByPhone(DEMO_PEOPLE[0]!.phone))!;
+    expect((await T.app.escrow.offers("cashin", awa, 2000)).map((o) => [o.name, o.sats])).toEqual([["Ndeye", 4950], ["Ousmane", 4925]]);
+    await expectConsistent();
   }, 240_000);
 });
 

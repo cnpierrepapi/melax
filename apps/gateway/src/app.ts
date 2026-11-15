@@ -12,6 +12,8 @@ import type { SmsAdapter } from "@melax/sms";
 import { MemorySessions, UssdRuntime } from "@melax/ussd";
 import { Vault } from "@melax/vault";
 import type { Config } from "./config.ts";
+import { Agents } from "./escrow/agents.ts";
+import { Escrow } from "./escrow/engine.ts";
 import { Rates } from "./rates.ts";
 import { SettleRouter } from "./settle.ts";
 import { SmsInbound } from "./smsin.ts";
@@ -45,6 +47,8 @@ export interface App extends AppDeps {
   rates: Rates;
   settle: SettleRouter;
   wallet: Wallet;
+  agents: Agents;
+  escrow: Escrow;
   inbound: SmsInbound;
   runtime: UssdRuntime<S, Effect, Res>;
 }
@@ -63,11 +67,13 @@ export function buildApp(deps: AppDeps): App {
   const users = new Users({ db, clock, log, pinPepper, phoneKey, dataKey, outbox, domain: config.domain, code: config.ussdCode });
   const rates = new Rates({ db, clock, log, fixedXofPerBtc: config.rateFixed, fetch: deps.fetch });
   const wallet = new Wallet({ db, clock, log, vault, ln: deps.ln, users, rates, outbox, settle });
+  const agents = new Agents({ db, clock, log, dataKey, users, world: deps.world });
+  const escrow = new Escrow({ db, clock, log, vault, ln: deps.ln, users, agents, wallet, rates, settle, dataKey, code: config.ussdCode, cltvBlocks: config.escrow.cltvBlocks });
   const inbound = new SmsInbound({ db, clock, log, users, wallet, outbox, code: config.ussdCode });
 
   const runtime = new UssdRuntime<S, Effect, Res>({
     machine: createWalletMachine({ code: config.ussdCode }),
-    perform: createPerform({ db, users, wallet, outbox, log }),
+    perform: createPerform({ db, users, wallet, escrow, agents, rates, outbox, log }),
     sessions: new MemorySessions<S>(),
     texts: runtimeTexts(config.ussdCode),
     clock,
@@ -75,5 +81,5 @@ export function buildApp(deps: AppDeps): App {
     stepBudgetMs: config.stepBudgetMs,
   });
 
-  return { ...deps, vault, outbox, users, rates, settle, wallet, inbound, runtime };
+  return { ...deps, vault, outbox, users, rates, settle, wallet, agents, escrow, inbound, runtime };
 }

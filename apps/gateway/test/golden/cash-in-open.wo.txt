@@ -1,0 +1,25 @@
+dial #2580#
+Melax
+1 Sa xaalis
+2 Yonnee
+3 Jot
+4 Fey jaaykat
+5 Dugal xaalis
+6 Genne xaalis
+0 Yeneen
+
+> 5
+Dugal D4F2A1: yonneel 2 000 F ci Wave ci 776665544 (Ndeye).
+1 Jafe-jafe
+2 Bayyi
+0 Menu
+
+> 0
+Melax
+1 Sa xaalis
+2 Yonnee
+3 Jot
+4 Fey jaaykat
+5 Dugal xaalis
+6 Genne xaalis
+0 Yeneen

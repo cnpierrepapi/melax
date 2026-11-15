@@ -1,0 +1,29 @@
+dial #2580#
+Melax
+1 Sa xaalis
+2 Yonnee
+3 Jot
+4 Fey jaaykat
+5 Dugal xaalis
+6 Genne xaalis
+0 Yeneen
+
+> 6
+Naata la (FCFA):
+
+> 2000
+Tannal agent:
+1 Ndeye (Wave) 5 050 sats
+0 Dellu
+
+> 1
+Genne 2 000 F ci Ndeye ak Wave. 5 076 sats dinanu ko tej.
+1 Waaw
+2 Bayyi
+
+> 1
+Sa kod:
+
+> *****
+Genne R9C3B0 tambali na. Ndeye dina la yonnee 2 000 F ci Wave.
+Waxal ne jot nga ci menu 6.

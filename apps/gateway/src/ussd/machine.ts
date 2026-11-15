@@ -11,7 +11,8 @@
 //   - all text comes from @melax/i18n. Text typed by a user passes through clip().
 // Callers: app.ts (wired into UssdRuntime), test/machine.test.ts (golden transcripts).
 import { isWeakPin } from "@melax/crypto";
-import { LANGS, LANG_NAMES, type Lang, type MessageKey, clip, fcfa, sats, shortDate, t } from "@melax/i18n";
+import { LANGS, LANG_NAMES, type Lang, type MessageKey, clip, fcfa, methodName, sats, shortDate, t } from "@melax/i18n";
+import { feeCapSat } from "@melax/lightning";
 import { type Machine, type Screen, type Step, type TextKind, con, end, menu } from "@melax/ussd";
 import { ALIAS_RE, NAME_RE } from "../rules.ts";
 
@@ -32,9 +33,53 @@ export type Effect =
   | { t: "setLang"; lang: Lang }
   | { t: "address" }
   | { t: "setAlias"; alias: string; pin: string }
-  | { t: "limits" };
+  | { t: "limits" }
+  // agents (phase 6)
+  | { t: "trade" }
+  | { t: "offers"; kind: TradeKind; fcfa: number }
+  | { t: "cashin"; agentId: string; fcfa: number; sats: number }
+  | { t: "cashout"; agentId: string; fcfa: number; sats: number; pin: string }
+  | { t: "tradeConfirm"; tradeId: string; pin: string }
+  | { t: "dispute"; tradeId: string }
+  | { t: "tradeCancel"; tradeId: string }
+  | { t: "desk" }
+  | { t: "deskNext"; kind: TradeKind }
+  | { t: "deskAct"; act: DeskAct; tradeId: string; pin: string }
+  | { t: "bond" }
+  | { t: "bondAdd"; fcfa: number; pin: string }
+  | { t: "bondOut"; pin: string }
+  | { t: "offer" }
+  | { t: "offerToggle" };
 
-export type Err = "PIN_WRONG" | "PIN_LOCKED" | "INSUFFICIENT_FUNDS" | "LIMIT" | "BUSY" | "PAUSED" | "FROZEN" | "NOT_FOUND" | "BAD_INPUT" | "PENDING" | "REPORTED" | "GENERIC";
+export type TradeKind = "cashin" | "cashout";
+export type DeskAct = "confirm" | "sent" | "decline";
+
+/** A trade as the menus show it. `number` is the other side's mobile-money number, only where that person needs it. */
+export interface TradeInfo {
+  id: string;
+  ref: string;
+  kind: TradeKind;
+  state: string;
+  fcfa: number;
+  sats: number;
+  lockSats: number;
+  method: string;
+  agent: string;
+  name: string;
+  masked: string;
+  number: string;
+}
+
+export interface OfferInfo {
+  agentId: string;
+  name: string;
+  method: string;
+  sats: number;
+}
+
+export type Err =
+  | "PIN_WRONG" | "PIN_LOCKED" | "INSUFFICIENT_FUNDS" | "LIMIT" | "BUSY" | "PAUSED" | "FROZEN" | "NOT_FOUND" | "BAD_INPUT" | "PENDING" | "REPORTED" | "GENERIC"
+  | "RANGE" | "AGENT_OFF" | "SELF" | "OPEN_TRADE" | "BOND" | "STATE" | "UNAVAILABLE";
 export type LimitReason = "PER_TX" | "PER_DAY" | "PER_MONTH" | "NEW_RECIPIENT" | "BAD_AMOUNT";
 
 export interface HistItem {
@@ -73,6 +118,16 @@ export interface Res {
   perTxFcfa?: number;
   dayLeftFcfa?: number;
   monthLeftFcfa?: number;
+  trade?: TradeInfo | null;
+  offers?: OfferInfo[];
+  nIn?: number;
+  nOut?: number;
+  /** The bond, and the sats of open cash-ins that lean on it. */
+  bondSats?: number;
+  bondFcfa?: number;
+  bondedSats?: number;
+  offer?: { premiumBp: number; method: string; minFcfa: number; maxFcfa: number; active: boolean };
+  active?: boolean;
 }
 
 // ---------- state ----------
@@ -90,10 +145,23 @@ export type At =
   | "pinchg.old" | "pinchg.new" | "pinchg.new2" | "pinchg.run"
   | "lang.pick" | "lang.run"
   | "addr.run" | "addr.show" | "addr.ask" | "addr.pin" | "addr.set"
-  | "lim.run" | "lim.show";
+  | "lim.run" | "lim.show"
+  // cash-in (5) and cash-out (6): the user's side
+  | "dep.check" | "dep.amount" | "dep.offers" | "dep.pick" | "dep.confirm" | "dep.run" | "dep.view"
+  | "wd.check" | "wd.amount" | "wd.offers" | "wd.pick" | "wd.confirm" | "wd.pin" | "wd.run" | "wd.view" | "wd.cpin" | "wd.crun"
+  | "trade.dispute" | "trade.cancel"
+  // the agent desk
+  | "desk.run" | "desk"
+  | "desk.in.run" | "desk.in" | "desk.in.pin" | "desk.in.act"
+  | "desk.out.run" | "desk.out" | "desk.out.pin" | "desk.out.act"
+  | "bond.run" | "bond.show" | "bond.amount" | "bond.pin" | "bond.add" | "bondout.pin" | "bond.out"
+  | "offer.run" | "offer.show" | "offer.toggle";
 
 /** Steps whose input is a secret code. The dial-string queue is dropped at each, and none is ever a resume point. */
-export const PIN_STEPS: ReadonlySet<At> = new Set<At>(["onb.pin1", "onb.pin2", "bal.pin", "send.pin", "hist.pin", "pinchg.old", "pinchg.new", "pinchg.new2", "addr.pin"]);
+export const PIN_STEPS: ReadonlySet<At> = new Set<At>([
+  "onb.pin1", "onb.pin2", "bal.pin", "send.pin", "hist.pin", "pinchg.old", "pinchg.new", "pinchg.new2", "addr.pin",
+  "wd.pin", "wd.cpin", "desk.in.pin", "desk.out.pin", "bond.pin", "bondout.pin",
+]);
 
 interface V {
   /** Secret codes. Present only between the prompt and the effect that uses them. */
@@ -123,6 +191,17 @@ interface V {
   dayLeft?: number;
   monthLeft?: number;
   pick?: Lang;
+  agentId?: string;
+  method?: string;
+  offers?: OfferInfo[];
+  trade?: TradeInfo;
+  act?: DeskAct;
+  nIn?: number;
+  nOut?: number;
+  bondSats?: number;
+  bondFcfa?: number;
+  bondedSats?: number;
+  offer?: Res["offer"];
 }
 
 export interface S {
@@ -164,9 +243,36 @@ function refusal(lang: Lang, r: Res): string {
       return t(lang, "pending");
     case "REPORTED":
       return t(lang, "err.reported");
+    case "OPEN_TRADE":
+      return t(lang, "err.open_trade");
+    case "STATE":
+      return t(lang, "trade.changed");
+    // The agent list is drawn just before; any of these means the pick went stale in between.
+    case "RANGE":
+    case "AGENT_OFF":
+    case "SELF":
+    case "BOND":
+      return t(lang, "agents.none");
     default:
       return t(lang, "err.generic");
   }
+}
+
+/**
+ * One agent on the pick screen: name, method, and the sats of this trade. Three fit on one screen with the
+ * longest name, "Orange Money" and nine-digit sats only if the name is cut at 9 characters.
+ */
+function offerLine(o: OfferInfo): string {
+  return `${clip(o.name, 9)} (${methodName(o.method)}) ${sats(o.sats)}`;
+}
+
+/** Where a user's open trade is shown. Each state has one screen; only the ones that wait for the user take input. */
+function tradeScreen(s: S, tr: TradeInfo): S {
+  if (tr.kind === "cashin" && tr.state === "held") return go(s, "dep.view", { trade: tr });
+  if (tr.kind === "cashin" && tr.state === "open") return say(s, "dep.wait", { ref: tr.ref });
+  if (tr.kind === "cashout" && (tr.state === "locked" || tr.state === "sent")) return go(s, "wd.view", { trade: tr });
+  if (tr.state === "disputed" || tr.state === "released") return say(s, "trade.disputed", { ref: tr.ref });
+  return say(s, "trade.busy", { ref: tr.ref });
 }
 
 function pinPrompt(s: S, ask: MessageKey = "pin.ask"): Screen {
@@ -207,8 +313,11 @@ export function createWalletMachine(cfg: { code: string }): Machine<S, Effect, R
         return {
           screen: menu(t(L, "home.title"), [["1", t(L, "m.balance")], ["2", t(L, "m.send")], ["3", t(L, "m.receive")], ["4", t(L, "m.pay")], ["5", t(L, "m.deposit")], ["6", t(L, "m.withdraw")], ["0", t(L, "m.more")]]),
         };
-      case "home2":
-        return { screen: menu(t(L, "home.title"), [["7", t(L, "m.vouchers")], ["8", t(L, "m.history")], ["9", t(L, "m.account")], ["0", t(L, "m.back")]]) };
+      case "home2": {
+        // The agent desk is in the menu of agents only.
+        const desk: Array<[string, string]> = s.profile?.role === "agent" ? [["4", t(L, "m.agent")]] : [];
+        return { screen: menu(t(L, "home.title"), [...desk, ["7", t(L, "m.vouchers")], ["8", t(L, "m.history")], ["9", t(L, "m.account")], ["0", t(L, "m.back")]]) };
+      }
 
       // balance
       case "bal.pin":
@@ -289,6 +398,105 @@ export function createWalletMachine(cfg: { code: string }): Machine<S, Effect, R
         return {
           screen: con(t(L, "lim.show", { tier: v.tier ?? 0, tx: fcfa(v.perTx ?? 0), day: fcfa(v.dayLeft ?? 0), month: fcfa(v.monthLeft ?? 0) })),
         };
+
+      // cash-in and cash-out, the user's side
+      case "dep.check":
+      case "wd.check":
+        return { effect: { t: "trade" } };
+      case "dep.amount":
+      case "wd.amount":
+        return { screen: con(v.note ?? t(L, "amount.ask")) };
+      case "dep.offers":
+      case "wd.offers":
+        return { effect: { t: "offers", kind: s.at === "dep.offers" ? "cashin" : "cashout", fcfa: v.fcfa ?? 0 } };
+      case "dep.pick":
+      case "wd.pick":
+        return { screen: menu(t(L, "agents.pick"), [...(v.offers ?? []).map((o, i) => [String(i + 1), offerLine(o)] as [string, string]), ["0", t(L, "m.back")]]) };
+      case "dep.confirm":
+        return { screen: con(t(L, "dep.confirm", { fcfa: fcfa(v.fcfa ?? 0), agent: clip(v.name ?? "", 16), method: methodName(v.method ?? ""), sats: sats(v.sats ?? 0) })) };
+      case "dep.run":
+        return { effect: { t: "cashin", agentId: v.agentId ?? "", fcfa: v.fcfa ?? 0, sats: v.sats ?? 0 } };
+      case "dep.view": {
+        const tr = v.trade!;
+        return { screen: con(t(L, "dep.open", { ref: tr.ref, fcfa: fcfa(tr.fcfa), method: methodName(tr.method), number: tr.number, agent: clip(tr.agent, 16) })) };
+      }
+      case "wd.confirm": {
+        // What locks is the sats plus the most the pay-out's Lightning fee may take. What the fee does not use comes back.
+        const lock = (v.sats ?? 0) + feeCapSat(v.sats ?? 0);
+        return { screen: con(t(L, "wd.confirm", { fcfa: fcfa(v.fcfa ?? 0), agent: clip(v.name ?? "", 16), method: methodName(v.method ?? ""), sats: sats(lock) })) };
+      }
+      case "wd.pin":
+      case "wd.cpin":
+        return { screen: pinPrompt(s) };
+      case "wd.run":
+        return { effect: { t: "cashout", agentId: v.agentId ?? "", fcfa: v.fcfa ?? 0, sats: v.sats ?? 0, pin: v.pin ?? "" } };
+      case "wd.view": {
+        const tr = v.trade!;
+        return { screen: con(t(L, "wd.pending", { ref: tr.ref, fcfa: fcfa(tr.fcfa), agent: clip(tr.agent, 16) })) };
+      }
+      case "wd.crun":
+        return { effect: { t: "tradeConfirm", tradeId: v.trade?.id ?? "", pin: v.pin ?? "" } };
+      case "trade.dispute":
+        return { effect: { t: "dispute", tradeId: v.trade?.id ?? "" } };
+      case "trade.cancel":
+        return { effect: { t: "tradeCancel", tradeId: v.trade?.id ?? "" } };
+
+      // the agent desk
+      case "desk.run":
+        return { effect: { t: "desk" } };
+      case "desk":
+        return {
+          screen: menu(t(L, "m.agent"), [
+            ["1", t(L, "agent.deposits", { n: v.nIn ?? 0 })],
+            ["2", t(L, "agent.withdrawals", { n: v.nOut ?? 0 })],
+            ["3", t(L, "agent.bond")],
+            ["4", t(L, "agent.offer")],
+            ["0", t(L, "m.back")],
+          ]),
+        };
+      case "desk.in.run":
+        return { effect: { t: "deskNext", kind: "cashin" } };
+      case "desk.out.run":
+        return { effect: { t: "deskNext", kind: "cashout" } };
+      case "desk.in": {
+        const tr = v.trade!;
+        return { screen: con(t(L, "agent.dep.ask", { ref: tr.ref, fcfa: fcfa(tr.fcfa), masked: tr.masked, method: methodName(tr.method) })) };
+      }
+      case "desk.out": {
+        const tr = v.trade!;
+        return { screen: con(t(L, "agent.wd.ask", { ref: tr.ref, fcfa: fcfa(tr.fcfa), method: methodName(tr.method), number: tr.number, name: clip(tr.name, 16) })) };
+      }
+      case "desk.in.pin":
+      case "desk.out.pin":
+      case "bond.pin":
+      case "bondout.pin":
+        return { screen: pinPrompt(s) };
+      case "desk.in.act":
+        return { effect: { t: "deskAct", act: "confirm", tradeId: v.trade?.id ?? "", pin: v.pin ?? "" } };
+      case "desk.out.act":
+        return { effect: { t: "deskAct", act: v.act ?? "sent", tradeId: v.trade?.id ?? "", pin: v.pin ?? "" } };
+      case "bond.run":
+        return { effect: { t: "bond" } };
+      case "bond.show":
+        return { screen: con(t(L, "agent.bond.show", { sats: sats(v.bondSats ?? 0), fcfa: fcfa(v.bondFcfa ?? 0), open: sats(v.bondedSats ?? 0) })) };
+      case "bond.amount":
+        return { screen: con(v.note ?? t(L, "agent.bond.ask")) };
+      case "bond.add":
+        return { effect: { t: "bondAdd", fcfa: v.fcfa ?? 0, pin: v.pin ?? "" } };
+      case "bond.out":
+        return { effect: { t: "bondOut", pin: v.pin ?? "" } };
+      case "offer.run":
+        return { effect: { t: "offer" } };
+      case "offer.show": {
+        const o = v.offer!;
+        const dot = (o.premiumBp / 100).toFixed(o.premiumBp % 100 === 0 ? 0 : o.premiumBp % 10 === 0 ? 1 : 2);
+        const premium = L === "en" ? dot : dot.replace(".", ","); // 1,5 % in French and Wolof
+        return {
+          screen: con(t(L, "agent.offer.show", { premium, methods: methodName(o.method), min: fcfa(o.minFcfa), max: fcfa(o.maxFcfa), state: t(L, o.active ? "agent.on" : "agent.off") })),
+        };
+      }
+      case "offer.toggle":
+        return { effect: { t: "offerToggle" } };
     }
   }
 
@@ -322,7 +530,10 @@ export function createWalletMachine(cfg: { code: string }): Machine<S, Effect, R
         if (first && input === "1") return go(s, "bal.pin");
         if (first && input === "2") return go(s, "send.to");
         if (first && input === "3") return go(s, "recv.run");
-        if (first && (input === "4" || input === "5" || input === "6")) return say(s, "soon");
+        if (first && input === "4") return say(s, "soon"); // pay a shop: phase 7
+        if (first && input === "5") return go(s, "dep.check");
+        if (first && input === "6") return go(s, "wd.check");
+        if (!first && input === "4" && s.profile?.role === "agent") return go(s, "desk.run");
         if (input === "7") return say(s, "soon");
         if (input === "8") return go(s, "hist.pin");
         if (input === "9") return go(s, "acct");
@@ -400,6 +611,81 @@ export function createWalletMachine(cfg: { code: string }): Machine<S, Effect, R
         return go(s, "addr.set", { alias: v.alias, pin: input });
       case "lim.show":
         return home();
+
+      // cash-in and cash-out, the user's side
+      case "dep.amount":
+      case "wd.amount": {
+        const digits = input.replace(/\s/g, "");
+        const amount = /^\d{1,7}$/.test(digits) ? Number(digits) : 0;
+        if (amount <= 0) return go(s, s.at, { note: t(L, "amount.bad") });
+        return go(s, s.at === "dep.amount" ? "dep.offers" : "wd.offers", { fcfa: amount });
+      }
+      case "dep.pick":
+      case "wd.pick": {
+        if (input === "0") return home();
+        const o = (v.offers ?? [])[Number(input) - 1];
+        if (!/^\d$/.test(input) || !o) return s;
+        return go(s, s.at === "dep.pick" ? "dep.confirm" : "wd.confirm", { fcfa: v.fcfa, agentId: o.agentId, name: o.name, method: o.method, sats: o.sats });
+      }
+      case "dep.confirm":
+        if (input === "1") return go(s, "dep.run", v);
+        if (input === "2") return say(s, "cancelled");
+        return s;
+      case "wd.confirm":
+        if (input === "1") return go(s, "wd.pin", v);
+        if (input === "2") return say(s, "cancelled");
+        return s;
+      case "wd.pin":
+        return go(s, "wd.run", { agentId: v.agentId, name: v.name, method: v.method, fcfa: v.fcfa, sats: v.sats, pin: input });
+      case "dep.view":
+        if (input === "1") return go(s, "trade.dispute", { trade: v.trade });
+        if (input === "2") return go(s, "trade.cancel", { trade: v.trade });
+        if (input === "0") return home();
+        return s;
+      case "wd.view":
+        if (input === "1") return go(s, "wd.cpin", { trade: v.trade });
+        if (input === "2") return say(s, "wd.wait");
+        if (input === "3") return go(s, "trade.dispute", { trade: v.trade });
+        return s;
+      case "wd.cpin":
+        return go(s, "wd.crun", { trade: v.trade, pin: input });
+
+      // the agent desk
+      case "desk":
+        if (input === "1") return go(s, "desk.in.run");
+        if (input === "2") return go(s, "desk.out.run");
+        if (input === "3") return go(s, "bond.run");
+        if (input === "4") return go(s, "offer.run");
+        if (input === "0") return home();
+        return s;
+      case "desk.in":
+        if (input === "1") return go(s, "desk.in.pin", { trade: v.trade });
+        if (input === "2") return say(s, "agent.dep.no", { ref: v.trade?.ref ?? "" });
+        return s;
+      case "desk.in.pin":
+        return go(s, "desk.in.act", { trade: v.trade, pin: input });
+      case "desk.out":
+        if (input === "1") return go(s, "desk.out.pin", { trade: v.trade, act: "sent" });
+        if (input === "2") return go(s, "desk.out.pin", { trade: v.trade, act: "decline" });
+        return s;
+      case "desk.out.pin":
+        return go(s, "desk.out.act", { trade: v.trade, act: v.act, pin: input });
+      case "bond.show":
+        if (input === "1") return go(s, "bond.amount");
+        if (input === "2") return go(s, "bondout.pin");
+        return home();
+      case "bond.amount": {
+        const digits = input.replace(/\s/g, "");
+        const amount = /^\d{1,7}$/.test(digits) ? Number(digits) : 0;
+        if (amount <= 0) return go(s, "bond.amount", { note: t(L, "amount.bad") });
+        return go(s, "bond.pin", { fcfa: amount });
+      }
+      case "bond.pin":
+        return go(s, "bond.add", { fcfa: v.fcfa, pin: input });
+      case "bondout.pin":
+        return go(s, "bond.out", { pin: input });
+      case "offer.show":
+        return input === "1" ? go(s, "offer.toggle") : home();
 
       default:
         return s; // effect steps and the closing screen take no input
@@ -482,6 +768,70 @@ export function createWalletMachine(cfg: { code: string }): Machine<S, Effect, R
       case "lim.run":
         return r.ok ? go(s, "lim.show", { tier: r.tier, perTx: r.perTxFcfa, dayLeft: r.dayLeftFcfa, monthLeft: r.monthLeftFcfa }) : failed();
 
+      // cash-in and cash-out, the user's side
+      case "dep.check":
+      case "wd.check":
+        if (!r.ok) return failed();
+        // One open trade per user: whichever entry was pressed, an open trade is shown first.
+        if (r.trade) return tradeScreen(s, r.trade);
+        return go(s, s.at === "dep.check" ? "dep.amount" : "wd.amount");
+      case "dep.offers":
+      case "wd.offers":
+        if (!r.ok) return failed();
+        if ((r.offers ?? []).length === 0) return say(s, "agents.none");
+        return go(s, s.at === "dep.offers" ? "dep.pick" : "wd.pick", { fcfa: v.fcfa, offers: (r.offers ?? []).slice(0, 3) });
+      case "dep.run": {
+        if (!r.ok || !r.trade) return failed();
+        const tr = r.trade;
+        if (tr.state !== "held") return say(s, "dep.wait", { ref: tr.ref });
+        return say(s, "dep.done", { fcfa: fcfa(tr.fcfa), method: methodName(tr.method), number: tr.number, agent: clip(tr.agent, 16), ref: tr.ref });
+      }
+      case "wd.run": {
+        if (r.err === "PIN_WRONG") return go(s, "wd.pin", { agentId: v.agentId, name: v.name, method: v.method, fcfa: v.fcfa, sats: v.sats, left: r.left ?? 0 });
+        if (!r.ok || !r.trade) return failed();
+        const tr = r.trade;
+        if (tr.state !== "locked") return say(s, "trade.busy", { ref: tr.ref });
+        return say(s, "wd.done", { ref: tr.ref, agent: clip(tr.agent, 16), fcfa: fcfa(tr.fcfa), method: methodName(tr.method) });
+      }
+      case "wd.crun":
+        if (r.err === "PIN_WRONG") return go(s, "wd.cpin", { trade: v.trade, left: r.left ?? 0 });
+        if (!r.ok || !r.trade) return failed();
+        return r.trade.state === "done" ? say(s, "wd.confirmed", { ref: r.trade.ref }) : say(s, "trade.busy", { ref: r.trade.ref });
+      case "trade.dispute":
+        return r.ok && r.trade ? say(s, "dispute.opened", { ref: r.trade.ref }) : failed();
+      case "trade.cancel":
+        return r.ok && r.trade ? say(s, "cancelled") : failed();
+
+      // the agent desk
+      case "desk.run":
+        return r.ok ? go(s, "desk", { nIn: r.nIn ?? 0, nOut: r.nOut ?? 0 }) : failed();
+      case "desk.in.run":
+      case "desk.out.run":
+        if (!r.ok) return failed();
+        if (!r.trade) return say(s, "agent.none");
+        return go(s, s.at === "desk.in.run" ? "desk.in" : "desk.out", { trade: r.trade });
+      case "desk.in.act":
+        if (r.err === "PIN_WRONG") return go(s, "desk.in.pin", { trade: v.trade, left: r.left ?? 0 });
+        if (!r.ok || !r.trade) return failed();
+        return r.trade.state === "done" ? say(s, "agent.dep.done", { ref: r.trade.ref, sats: sats(r.trade.sats) }) : say(s, "trade.busy", { ref: r.trade.ref });
+      case "desk.out.act":
+        if (r.err === "PIN_WRONG") return go(s, "desk.out.pin", { trade: v.trade, act: v.act, left: r.left ?? 0 });
+        if (!r.ok || !r.trade) return failed();
+        return v.act === "decline" ? say(s, "agent.wd.refused", { ref: r.trade.ref }) : say(s, "agent.wd.done");
+      case "bond.run":
+        return r.ok ? go(s, "bond.show", { bondSats: r.bondSats, bondFcfa: r.bondFcfa, bondedSats: r.bondedSats }) : failed();
+      case "bond.add":
+        if (r.err === "PIN_WRONG") return go(s, "bond.pin", { fcfa: v.fcfa, left: r.left ?? 0 });
+        return r.ok ? say(s, "agent.bond.added", { sats: sats(r.sats ?? 0) }) : failed();
+      case "bond.out":
+        if (r.err === "PIN_WRONG") return go(s, "bondout.pin", { left: r.left ?? 0 });
+        if (r.err === "OPEN_TRADE") return say(s, "agent.bond.locked");
+        return r.ok ? say(s, "agent.bond.out", { sats: sats(r.sats ?? 0) }) : failed();
+      case "offer.run":
+        return r.ok && r.offer ? go(s, "offer.show", { offer: r.offer }) : failed();
+      case "offer.toggle":
+        return r.ok ? say(s, r.active ? "agent.on" : "agent.off") : failed();
+
       default:
         return fin(s, t(L, "err.generic"));
     }
@@ -519,6 +869,13 @@ export function createWalletMachine(cfg: { code: string }): Machine<S, Effect, R
         return at("send.confirm", { toRef: s.v.toRef, name: s.v.name, masked: s.v.masked, fcfa: s.v.fcfa, sats: s.v.sats });
       case "recv.show":
         return at("recv.show", { address: s.v.address });
+      // A trade's confirm screen again. Screens that show a trade already open are not kept: the trade
+      // may have moved on since, and a fresh dial of 5 or 6 shows where it is now.
+      case "dep.confirm":
+        return at("dep.confirm", { fcfa: s.v.fcfa, agentId: s.v.agentId, name: s.v.name, method: s.v.method, sats: s.v.sats });
+      case "wd.confirm":
+      case "wd.pin":
+        return at("wd.confirm", { fcfa: s.v.fcfa, agentId: s.v.agentId, name: s.v.name, method: s.v.method, sats: s.v.sats });
       case "acct":
       case "acct.pin":
       case "pinchg.old":
@@ -551,8 +908,8 @@ export function runtimeTexts(code: string): (kind: TextKind, state: S | null) =>
     const lang = state?.lang ?? "fr";
     if (kind === "expired") return t(lang, "expired", { code });
     if (kind === "resume") return t(lang, "resume");
-    // Only a send that is still running leads to an SMS. Promising one for a slow lookup would be a lie.
-    if (kind === "busy" && state?.at === "send.run") return t(lang, "pending");
+    // Only a money step that is still running leads to an SMS. Promising one for a slow lookup would be a lie.
+    if (kind === "busy" && (state?.at === "send.run" || state?.at === "dep.run" || state?.at === "wd.run" || state?.at === "wd.crun" || state?.at === "desk.in.act")) return t(lang, "pending");
     return t(lang, "err.generic");
   };
 }

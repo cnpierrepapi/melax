@@ -1,0 +1,21 @@
+dial #2580#
+Melax
+1 Balance
+2 Send
+3 Receive
+4 Pay a shop
+5 Cash in
+6 Cash out
+0 More
+
+> 6
+Cash out R9C3B0: did you get 2 000 F from Ndeye?
+1 Yes, received
+2 Not yet
+3 Dispute
+
+> 1
+Secret code:
+
+> *****
+Thank you. Cash out R9C3B0 complete.

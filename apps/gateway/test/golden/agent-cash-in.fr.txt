@@ -1,0 +1,36 @@
+dial #2580#
+Melax
+1 Solde
+2 Envoyer
+3 Recevoir
+4 Payer marchand
+5 Depot
+6 Retrait
+0 Suite
+
+> 0
+Melax
+4 Espace agent
+7 Bons
+8 Historique
+9 Mon compte
+0 Retour
+
+> 4
+Espace agent
+1 Depots a confirmer (1)
+2 Retraits a payer (1)
+3 Ma caution
+4 Mon offre
+0 Retour
+
+> 1
+D4F2A1: avez-vous recu 2 000 F de 77*****67 par Wave?
+1 Oui, recu
+2 Non
+
+> 1
+Code secret:
+
+> *****
+Depot D4F2A1 confirme. 4 950 sats livres au client.

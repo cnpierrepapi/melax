@@ -172,6 +172,24 @@ export const messages = {
   },
   "wd.confirmed": { fr: "Merci. Retrait {ref} termine.", wo: "Jerejef. Genne {ref} jeex na.", en: "Thank you. Cash out {ref} complete." },
   "wd.wait": { fr: "D'accord. Revenez au menu 6 quand l'argent arrive.", wo: "Baax na. Dellusil ci menu 6 bu xaalis bi agsee.", en: "OK. Come back to menu 6 when the money arrives." },
+  "dep.open": {
+    fr: "Depot {ref}: envoyez {fcfa} par {method} au {number} ({agent}).\n1 Litige\n2 Annuler\n0 Menu",
+    wo: "Dugal {ref}: yonneel {fcfa} ci {method} ci {number} ({agent}).\n1 Jafe-jafe\n2 Bayyi\n0 Menu",
+    en: "Cash-in {ref}: send {fcfa} by {method} to {number} ({agent}).\n1 Dispute\n2 Cancel\n0 Menu",
+  },
+  "dep.wait": {
+    fr: "Depot {ref}: l'agent prepare les sats. Les instructions arrivent par SMS.",
+    wo: "Dugal {ref}: agent bi mi ngi waajal sats yi. Lepp dina ngii ci SMS.",
+    en: "Cash-in {ref}: the agent is setting the sats aside. Instructions follow by SMS.",
+  },
+  "trade.busy": { fr: "{ref}: operation en cours. Vous recevrez un SMS.", wo: "{ref}: mi ngi ci yoon. Dinga jot SMS.", en: "{ref}: in progress. You will get an SMS." },
+  "trade.disputed": { fr: "{ref}: litige en cours. Un arbitre decide. Vous recevrez un SMS.", wo: "{ref}: jafe-jafe mi ngi ci yoon. Arbit bi dina ko ate. Dinga jot SMS.", en: "{ref}: dispute open. An arbiter decides. You will get an SMS." },
+  "trade.changed": { fr: "Cette operation a deja change. Rien n'a ete fait.", wo: "Lii soppiku na ba noppi. Dara deful.", en: "This trade has already moved on. Nothing was done." },
+  "err.open_trade": {
+    fr: "Une operation avec un agent est deja en cours. Voir menu 5 ou 6.",
+    wo: "Am na lu nekk ci yoon ak agent. Seetal menu 5 walla 6.",
+    en: "A trade with an agent is already open. See menu 5 or 6.",
+  },
   "dispute.opened": {
     fr: "Litige ouvert pour {ref}. Un arbitre vous contactera. Gardez votre reference de transfert.",
     wo: "Jafe-jafe bi bind nanu ko ngir {ref}. Arbit bi dina la woo. Deel sa referans.",
@@ -281,9 +299,17 @@ export const messages = {
   "agent.wd.done": { fr: "Note. Le client doit confirmer la reception.", wo: "Bind nanu ko. Kliyan bi war na wax ne jot na.", en: "Noted. The customer must confirm receipt." },
   "agent.wd.refused": { fr: "Retrait {ref} annule.", wo: "Genne {ref} bayyi nanu ko.", en: "Cash-out {ref} cancelled." },
   "agent.bond.show": {
-    fr: "Caution: {sats}\nNiveau {tier}: jusqu'a {max} par echange.\n0 Menu",
-    wo: "Garanti: {sats}\nNiveau {tier}: ba {max} ci benn wecce.\n0 Menu",
-    en: "Bond: {sats}\nLevel {tier}: up to {max} per trade.\n0 Menu",
+    fr: "Caution: {sats} ({fcfa})\nDont en jeu: {open}\n1 Ajouter\n2 Tout retirer\n0 Menu",
+    wo: "Garanti: {sats} ({fcfa})\nLi ci yoon: {open}\n1 Yokk\n2 Genne lepp\n0 Menu",
+    en: "Bond: {sats} ({fcfa})\nIn open trades: {open}\n1 Add\n2 Take it all out\n0 Menu",
+  },
+  "agent.bond.ask": { fr: "Montant a mettre en caution (FCFA):", wo: "Naata nga def ci garanti (FCFA):", en: "Amount to add to the bond (FCFA):" },
+  "agent.bond.added": { fr: "Caution: {sats}.", wo: "Garanti: {sats}.", en: "Bond: {sats}." },
+  "agent.bond.out": { fr: "Caution retiree: {sats}. Votre offre est en pause.", wo: "Garanti bi genne nanu ko: {sats}. Sa of taxaw na.", en: "Bond taken out: {sats}. Your offer is paused." },
+  "agent.bond.locked": {
+    fr: "Impossible: un depot, un retrait ou un litige est ouvert.",
+    wo: "Mennul: am na dugal, genne walla jafe-jafe bu ubbiku.",
+    en: "Not now: a cash-in, a cash-out or a dispute is open.",
   },
   "agent.offer.show": {
     fr: "Offre: prime {premium}%, {methods}, {min} a {max}. {state}\n1 Activer/Desactiver\n0 Menu",
@@ -333,6 +359,13 @@ export const messages = {
     wo: "Melax {ref}: {masked} dina la yonnee {fcfa} ci {method}. Waxal ne jot nga: {ussd}, Agent.",
     en: "Melax {ref}: {masked} will send you {fcfa} by {method}. Confirm receipt: {ussd}, Agent desk.",
   },
+  "sms.dep_agent_done": { fr: "Melax: depot {ref} confirme. {sats} livres a {name}.", wo: "Melax: dugal {ref} wer na. {sats} joxe nanu ko {name}.", en: "Melax: cash-in {ref} confirmed. {sats} delivered to {name}." },
+  "sms.dep_agent_cancel": {
+    fr: "Melax: depot {ref} annule. Vos {sats} reviennent sur votre portefeuille.",
+    wo: "Melax: dugal {ref} far na. Sa {sats} dellusi nanu ci sa kalpe.",
+    en: "Melax: cash-in {ref} cancelled. Your {sats} go back to your wallet.",
+  },
+  "sms.wd_agent_cancel": { fr: "Melax: retrait {ref} annule. N'envoyez rien.", wo: "Melax: genne {ref} far na. Bul yonnee dara.", en: "Melax: cash-out {ref} cancelled. Do not send anything." },
   "sms.dep_done": { fr: "Melax: depot {ref} recu, +{fcfa}. Solde: {balance}.", wo: "Melax: dugal {ref} agsi na, +{fcfa}. Li nga am: {balance}.", en: "Melax: cash-in {ref} received, +{fcfa}. Balance: {balance}." },
   "sms.dep_cancel": { fr: "Melax: depot {ref} annule. Rien n'a ete debite.", wo: "Melax: dugal {ref} far na. Dara genul.", en: "Melax: cash-in {ref} cancelled. Nothing was debited." },
   "sms.wd_agent": {

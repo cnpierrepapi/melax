@@ -10,7 +10,7 @@ const WORST: Record<string, string> = {
   receipt: "123456", balance: "1 250 000 F", rate: "61 850 000 F", agent: "Moussa Telecom 2", method: "Orange Money", number: "77 123 45 67", ref: "D-48213", shop: "Boutique Ndeye Fatou",
   label: "kora-brave42@melax.sn", list: "77*****67\n78*****12\n76*****03", url: "melax.sn/bon", ussd: "#2580#", tier: "2", tx: "250 000 F", day: "500 000 F", month: "2 000 000 F", premium: "1.5",
   methods: "Wave, Orange Money", min: "1 000 F", max: "250 000 F", state: "En pause.", count: "999", mcode: "12345", comment: 'Msg: "Joyeux anniversaire maman". ', reason: "Promesse de doubler votre argent.",
-  hours: "24", minutes: "1440", left: "4", n: "3", allowed: "250 000 F",
+  hours: "24", minutes: "1440", left: "4", n: "3", allowed: "250 000 F", open: "1 234 567 sats",
 };
 // Variables whose value is the dial code, not a voucher code.
 const fill = (key: MessageKey, lang: (typeof LANGS)[number]) => {

@@ -1,0 +1,25 @@
+dial #2580#
+Melax
+1 Balance
+2 Send
+3 Receive
+4 Pay a shop
+5 Cash in
+6 Cash out
+0 More
+
+> 5
+Cash-in D4F2A1: send 2 000 F by Wave to 776665544 (Ndeye).
+1 Dispute
+2 Cancel
+0 Menu
+
+> 0
+Melax
+1 Balance
+2 Send
+3 Receive
+4 Pay a shop
+5 Cash in
+6 Cash out
+0 More

@@ -66,6 +66,11 @@ services:
       # Demo value: a fixed rate, so the demo works with no internet and the numbers stay round.
       # Start with RATE_FIXED_XOF_PER_BTC= (empty) to use the live rate instead.
       RATE_FIXED_XOF_PER_BTC: ${RATE_FIXED_XOF_PER_BTC-40000000}
+      # The test chain mines a block every 30 s. At LND's default delta of 80 blocks a held cash-in
+      # lasted 65 blocks, 32.5 minutes (scripts/probe/hold-cltv-probe.ts). 432 held one 414 blocks,
+      # past the 360 blocks of the 3 hour cap. The gateway refuses to start if the two do not cover it.
+      ESCROW_CLTV_BLOCKS: "432"
+      ESCROW_BLOCK_SECONDS: "30"
     volumes:
       - demo-keys:/keys:ro
     ports:

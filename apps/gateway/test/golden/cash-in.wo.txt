@@ -1,0 +1,27 @@
+dial #2580#
+Melax
+1 Sa xaalis
+2 Yonnee
+3 Jot
+4 Fey jaaykat
+5 Dugal xaalis
+6 Genne xaalis
+0 Yeneen
+
+> 5
+Naata la (FCFA):
+
+> 2000
+Tannal agent:
+1 Ndeye (Wave) 4 950 sats
+2 Ousmane (Orange Money) 4 900 sats
+0 Dellu
+
+> 1
+Dugal 2 000 F ci Ndeye ak Wave. Dinga jot 4 950 sats.
+1 Waaw
+2 Bayyi
+
+> 1
+Yonneel 2 000 F ci Wave ci 776665544 (Ndeye).
+Ref D4F2A1. Lepp ci SMS.

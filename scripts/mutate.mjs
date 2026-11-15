@@ -113,6 +113,77 @@ const mutations = [
     to: "",
     run: unit("demo.test.ts"),
   },
+  // ----- phase 6: agents, escrow, bonds, disputes -----
+  {
+    name: "a cash-in may pass the agent's bond",
+    file: "apps/gateway/src/escrow/engine.ts",
+    from: 'if ((await this.d.agents.bondedSats(a.agentId, tx)) + a.sats > (await this.d.agents.bondSats(a.agentId, tx))) return { ok: false, err: "BOND" };',
+    to: "void 0;",
+    run: unit("escrow.test.ts"),
+  },
+  {
+    name: "an agent confirms a cash-in without the code",
+    file: "apps/gateway/src/escrow/engine.ts",
+    from: '    if (!pin.ok) return pin;\n    return this.serial(r.id, async () => {\n      const cur = await this.row(r.id);\n      const moved = cur && (await this.move(this.d.db, cur, "agentConfirm"',
+    to: '    return this.serial(r.id, async () => {\n      const cur = await this.row(r.id);\n      const moved = cur && (await this.move(this.d.db, cur, "agentConfirm"',
+    run: unit("escrow.test.ts"),
+  },
+  {
+    name: "a user confirms a cash-out without the code",
+    file: "apps/gateway/src/escrow/engine.ts",
+    from: '    if (!pin.ok) return pin;\n    return this.serial(r.id, async () => {\n      const cur = await this.row(r.id);\n      const moved = cur && (await this.move(this.d.db, cur, "userConfirm"',
+    to: '    return this.serial(r.id, async () => {\n      const cur = await this.row(r.id);\n      const moved = cur && (await this.move(this.d.db, cur, "userConfirm"',
+    run: unit("escrow.test.ts"),
+  },
+  {
+    name: "a trade moves whatever state it is in now (no state check in the UPDATE)",
+    file: "apps/gateway/src/escrow/engine.ts",
+    from: " WHERE id = $1 AND state = $2 RETURNING *`",
+    to: " WHERE id = $1 AND $2::text IS NOT NULL RETURNING *`",
+    run: unit("escrow.test.ts"),
+  },
+  {
+    name: "the arbiter's route does not check its secret",
+    file: "apps/gateway/src/http.ts",
+    from: 'if (!auth.startsWith("Bearer ") || !constantTimeEqual(auth.slice(7), secret))',
+    to: "if (false)",
+    run: unit("escrow.test.ts"),
+  },
+  {
+    name: "the agent desk is in everyone's menu",
+    file: "apps/gateway/src/ussd/machine.ts",
+    from: 's.profile?.role === "agent" ? [["4", t(L, "m.agent")]] : []',
+    to: '[["4", t(L, "m.agent")]]',
+    run: unit("machine.test.ts"),
+  },
+  {
+    name: "the escrow's block delta is not checked against the hard cap",
+    file: "apps/gateway/src/config.ts",
+    from: "if ((e.ESCROW_CLTV_BLOCKS - ESCROW_LND_MARGIN_BLOCKS) * e.ESCROW_BLOCK_SECONDS < ESCROW_HARD_CAP_SEC) {",
+    to: "if (false) {",
+    run: unit("config.test.ts"),
+  },
+  {
+    name: "a cash-out does not count toward the limits",
+    file: "apps/gateway/src/escrow/engine.ts",
+    from: "receipt: await this.receiptNo(tx), ref: op.id, spend: true });\n    const number = localPhone",
+    to: "receipt: await this.receiptNo(tx), ref: op.id, spend: false });\n    const number = localPhone",
+    run: int("sats leave the user for escrow"),
+  },
+  {
+    name: "a payment held on a closed trade is left held (rule 15)",
+    file: "apps/gateway/src/escrow/engine.ts",
+    from: 'if (inv.state === "accepted" || inv.state === "open") {',
+    to: 'if (inv.state === "open") {',
+    run: int("rule 15"),
+  },
+  {
+    name: "a disputed cash-in is held past the hard cap",
+    file: "apps/gateway/src/escrow/engine.ts",
+    from: 'if (now >= toSafeInt(r.hard_cap_at ?? r.deadline_at) || inv?.state === "cancelled") {',
+    to: 'if (inv?.state === "cancelled") {',
+    run: int("hard cap comes first"),
+  },
 ];
 
 const only = process.argv[2];
