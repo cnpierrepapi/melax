@@ -161,6 +161,7 @@ The wallet works through the USSD engine on regtest with real ecash. What exists
 - Routes: `GET /healthz`. `POST /ussd/sim` in demo mode. `POST /ussd/at/:secret`, `POST /ussd/http`, `POST /sms/asg`, `POST /sms/httpsms`, each mounted only when its secret is set.
 - The server was started once on the regtest stack against Postgres 17: sign-up, balance and limits over `/ussd/sim`, the live rate from CoinGecko (38,919,778 F per bitcoin that day), one SMS handed to the demo adapter by the timer.
 - The gateway tests pass on PGlite and on Postgres 17.
+- The CI workflow ran on GitHub after the push and passed: type check, lint and the 252 unit tests on Linux. GitHub warns that `actions/checkout@v4` and `actions/setup-node@v4` were written for Node 20. Move them to their next major version when one of the next phases touches the workflow.
 
 Gaps that are known and not closed. Do not describe any of these as done:
 
@@ -171,8 +172,7 @@ Gaps that are known and not closed. Do not describe any of these as done:
 5. Sessions (`MemorySessions`) and the per-user send queue (`Wallet.serial`) live in the memory of one process. Two gateway processes would break the limit guarantee. Phase 12.
 6. A send that runs past the 12 second step budget and is then refused by a limit or the balance was already told "you will get an SMS", and none comes. Phase 12.
 7. Nothing limits how many numbers one caller can look up on the send screen. Phase 9.
-8. The CI workflow is new. Its first run on GitHub is the proof that it works; check it after the push.
-9. Three new Wolof strings (`soon`, `send.notfound`, and the reuse of two onboarding strings in the code change flow) are as unreviewed as the rest.
+8. Three new Wolof strings (`soon`, `send.notfound`, and the reuse of two onboarding strings in the code change flow) are as unreviewed as the rest.
 
 ## 4. Rules that keep the build from breaking
 

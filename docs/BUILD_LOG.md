@@ -86,6 +86,9 @@ a locked code still being compared, the Africa's Talking allow-list, history wit
 a cap, sends of one user running side by side, a send without the code, and the limit checked only before the
 code. All nine made a test fail.
 
+CI. The workflow ran on GitHub right after the push and passed on the first try: type check, lint and the 252
+unit tests on Linux. It is the first time this code ran on anything but this Windows machine.
+
 Not done in this phase, and said so in `docs/status.md`: the clean shutdown has never run, money enters an account
 only through a test helper, and the address on the screens is not payable yet.
 
