@@ -41,6 +41,7 @@ Tested against the real Nutshell mint and LND nodes on regtest, with faults inje
 - ecash client: 15 tests (lost replies, mint down, locked ecash, refund after locktime, failed payments).
 - vault: 21 tests (crash mid-swap then recovery on a fresh process, BUSY while an operation is unresolved, a payment held by the payee, a voucher redeemed from another wallet).
 - 1,000 random sends between five accounts: ledger equals proofs held for every account, total unchanged, the mint confirms every proof we hold is unspent. 671 s.
+- Ledger alone, 10,000 random operation sequences (`PROPERTY_RUNS=10000`): balances sum to zero, nothing internal goes negative, the chain verifies. 152 s.
 
 ### Limits, SMS, USSD, wording
 
