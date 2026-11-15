@@ -62,4 +62,6 @@ Vouchers and merchant mode, Lightning address and LNURL, the scam shield and acc
 recovery, Nostr offers and receipts, reserve snapshots and the verify page, the operator console, the voice line
 and Wolof speech, fiat rail adapters, the Mutinynet profile, the hosted deployment, and the submission pack.
 
-Nothing is deployed. The repository is private.
+Nothing is deployed. The repository is public since 15 Nov 2026. It was not submitted to the hackathon.
+
+`npm run crash-demo` kills a real gateway process with SIGKILL the moment the mint answers a swap, starts a new one, and shows the payment finished once with both receipts and the books matching. Run on 15 Nov 2026: it did.

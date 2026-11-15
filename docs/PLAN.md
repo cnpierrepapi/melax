@@ -25,7 +25,7 @@ Last updated: 15 Nov 2026, after phase 6.
    - `docs/ARCHITECTURE.md` and `docs/DECISIONS.md` (new parts, new choices and what they cost);
    - `docs/threat-model.md` (new threats, and for each control the test that shows it or the phase that will);
    - `docs/LITEPAPER.md`, if a trade-off described there changed.
-6. Nothing gets deployed and the repository stays private until the owner says otherwise.
+6. Nothing gets deployed until the owner says otherwise. The repository is public since 15 Nov 2026, the owner's choice, and is not being submitted to the hackathon.
 
 ## 2. Phase board
 
