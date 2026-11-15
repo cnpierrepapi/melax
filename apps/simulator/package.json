@@ -1,0 +1,15 @@
+{
+  "name": "@melax/simulator",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "The Melax landing page and the web phone simulator. Plain TypeScript and CSS, built with Vite, served by the gateway in demo mode.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "devDependencies": {
+    "vite": "^8.3.8"
+  }
+}

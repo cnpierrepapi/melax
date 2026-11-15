@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Try Melax: two phones, real ecash, test network</title>
+    <meta name="description" content="Two feature phones in your browser. They dial the real Melax gateway on a private test network." />
+    <meta name="theme-color" content="#f3ede2" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/src/base.css" />
+    <link rel="stylesheet" href="/src/phone.css" />
+    <link rel="stylesheet" href="/src/demo.css" />
+    <script type="module" src="/src/demo.ts"></script>
+  </head>
+  <body class="demo">
+    <header class="top">
+      <a class="mark" href="/" aria-label="Melax">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13.5 1 4 13.5h6L8.5 23 20 9.5h-6.5z" /></svg>
+        <span>melax</span>
+      </a>
+      <div class="langs" role="group" aria-label="Language">
+        <button type="button" data-lang="wo">Wolof</button>
+        <button type="button" data-lang="fr">Français</button>
+        <button type="button" data-lang="en">English</button>
+      </div>
+    </header>
+
+    <p class="warn" data-t="demo.warn"></p>
+    <p class="wolof-note" data-t="wolof.note" data-opt hidden></p>
+    <p class="down" id="down" data-t="demo.down" hidden></p>
+    <p class="loading" id="loading" data-t="demo.loading"></p>
+
+    <main class="stage" id="stage" data-show="a" hidden>
+      <section class="guide" id="guide" aria-live="polite"></section>
+
+      <div class="phones">
+        <div class="tabs" role="tablist">
+          <button type="button" role="tab" id="tab-a" data-testid="tab-a" aria-selected="true"></button>
+          <button type="button" role="tab" id="tab-b" data-testid="tab-b" aria-selected="false"></button>
+        </div>
+
+        <div class="seat seat-a">
+          <p class="seat-who"><b id="label-a"></b><span class="seat-num" id="num-a" data-testid="num-a"></span></p>
+          <div id="slot-a"></div>
+          <h3 class="sms-head" data-t="sms.title"></h3>
+          <ul class="sms-list" id="sms-a" data-testid="sms-a"></ul>
+        </div>
+
+        <div class="seat seat-b">
+          <p class="seat-who">
+            <label class="visually-hidden" for="pick-b" data-t="who.label"></label>
+            <select id="pick-b" data-testid="pick-b"></select>
+            <span class="seat-num" id="num-b" data-testid="num-b"></span>
+          </p>
+          <div id="slot-b"></div>
+          <h3 class="sms-head" data-t="sms.title"></h3>
+          <ul class="sms-list" id="sms-b" data-testid="sms-b"></ul>
+        </div>
+      </div>
+
+      <section class="books" data-testid="books">
+        <h2 data-t="led.title"></h2>
+        <p class="books-sub" data-t="led.sub"></p>
+        <div id="books-sum"></div>
+        <ol class="books-list" id="books-list"></ol>
+      </section>
+    </main>
+
+    <!-- Small screens only: the step in progress, pinned to the bottom while the guide is out of view. -->
+    <button type="button" class="hint" id="hint" data-testid="hint" hidden></button>
+
+    <footer class="foot foot-small">
+      <a href="/" data-t="nav.home"></a>
+      <p data-t="foot.net"></p>
+    </footer>
+  </body>
+</html>

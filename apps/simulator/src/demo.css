@@ -1,0 +1,548 @@
+/* The simulator page. On a phone: the guide, a switch between the two phones, one phone, its SMS, the
+   books. On a wide screen: guide on the left, both phones in the middle, the books on the right. */
+
+.warn {
+  margin: 0 1rem 0.5rem;
+  padding: 0.55rem 0.7rem;
+  background: var(--ink);
+  color: var(--bolt);
+  font: 600 0.78rem/1.35 var(--mono);
+}
+
+.demo > .wolof-note {
+  margin: 0 1rem 0.5rem;
+}
+
+.down {
+  margin: 0 1rem 0.75rem;
+  padding: 0.7rem;
+  border: 2px solid var(--stop);
+  color: var(--stop);
+  font-weight: 600;
+}
+
+.loading {
+  margin: 2rem 1rem;
+  font: 600 1rem/1 var(--mono);
+  color: var(--mute);
+}
+
+.stage {
+  display: grid;
+  gap: 1.5rem;
+  padding: 0.5rem 1rem 0;
+}
+
+/* ---------- the guide ---------- */
+
+.guide {
+  padding: 1rem 1rem 0.6rem;
+  background: #fffaf0;
+  border: 2px solid var(--ink);
+  border-radius: 0.4rem;
+  box-shadow: 6px 6px 0 var(--bolt);
+}
+
+.guide-count {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font: 700 0.78rem/1 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+
+.guide-dots {
+  display: inline-flex;
+  gap: 0.3rem;
+}
+
+.dot {
+  width: 1.5rem;
+  height: 0.4rem;
+  border: 2px solid var(--ink);
+  border-radius: 1rem;
+}
+
+.dot.done {
+  background: var(--go);
+}
+
+.dot.now {
+  background: var(--bolt);
+}
+
+.guide-list {
+  list-style: none;
+  margin: 0.9rem 0 0;
+  padding: 0;
+  counter-reset: step;
+}
+
+.step {
+  position: relative;
+  counter-increment: step;
+  padding: 0.55rem 0 0.55rem 2.6rem;
+  border-top: 1px solid var(--paper-2);
+}
+
+.step::before {
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: 0.5rem;
+  width: 1.8rem;
+  height: 1.8rem;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  font: 700 0.95rem/1 var(--mono);
+}
+
+.step-title {
+  font-size: 1.15rem;
+  line-height: 1.15;
+  padding-top: 0.3rem;
+}
+
+.step.later {
+  color: #a39a8c;
+}
+
+.step.later::before {
+  border-color: #c9c0b0;
+  border-style: dashed;
+}
+
+/* A step that the server confirmed: the number turns into a tick. */
+.step.done::before {
+  content: "";
+  background: var(--go);
+  border-color: var(--go);
+}
+
+.step.done::after {
+  content: "";
+  position: absolute;
+  left: 0.66rem;
+  top: 0.88rem;
+  width: 0.4rem;
+  height: 0.75rem;
+  border: solid #fff;
+  border-width: 0 0.18rem 0.18rem 0;
+  transform: rotate(40deg);
+}
+
+.step.done .step-title {
+  font-size: 1rem;
+}
+
+.step-ok {
+  font-size: 0.9rem;
+  color: var(--go);
+  font-weight: 600;
+}
+
+.step.now::before {
+  background: var(--bolt);
+}
+
+.step.now .step-title {
+  font-size: 1.6rem;
+  padding-top: 0.1rem;
+}
+
+.step-how {
+  margin-top: 0.5rem;
+  font-size: 1.02rem;
+}
+
+.step-tip {
+  margin-top: 0.45rem;
+  font-size: 0.88rem;
+  color: var(--mute);
+}
+
+.step-bad {
+  margin-top: 0.6rem;
+  color: var(--stop);
+  font-weight: 600;
+}
+
+.step .btn {
+  margin: 0.9rem 0 0.6rem;
+  font-size: 1.05rem;
+  padding: 0.85rem 1.1rem;
+}
+
+.btn-go {
+  background: var(--go);
+  border-color: var(--ink);
+  color: #fff;
+  box-shadow: 5px 5px 0 var(--ink);
+}
+
+.btn-go:hover {
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+.guide-end {
+  margin-top: 0.75rem;
+  padding: 0.9rem;
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: 0.3rem;
+}
+
+.end-title {
+  font-size: 1.7rem;
+  color: var(--bolt);
+}
+
+.end-how {
+  margin-top: 0.5rem;
+  font-size: 0.95rem;
+}
+
+.guide-foot {
+  margin-top: 0.4rem;
+  border-top: 1px solid var(--paper-2);
+}
+
+/* ---------- the two phones ---------- */
+
+.tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 2px solid var(--ink);
+  border-radius: 0.4rem;
+  overflow: hidden;
+  margin-bottom: 1rem;
+}
+
+.tabs button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: 700 1rem/1.1 var(--display);
+  font-stretch: 85%;
+  padding: 0.85rem 0.4rem;
+  min-height: 3rem;
+  cursor: pointer;
+}
+
+.tabs button + button {
+  border-left: 2px solid var(--ink);
+}
+
+.tabs button[aria-selected="true"] {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.stage[data-show="a"] .seat-b,
+.stage[data-show="b"] .seat-a {
+  display: none;
+}
+
+.seat-who {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  max-width: 19rem;
+  margin: 0 auto 0.7rem;
+  font: 700 1.05rem/1.2 var(--display);
+  font-stretch: 85%;
+}
+
+.seat-num {
+  font: 700 0.95rem/1 var(--mono);
+  white-space: nowrap;
+}
+
+.seat-who select {
+  appearance: none;
+  max-width: 11rem;
+  padding: 0.35rem 1.4rem 0.35rem 0.5rem;
+  border: 2px solid var(--ink);
+  border-radius: 0.3rem;
+  background:
+    linear-gradient(45deg, transparent 50%, var(--ink) 50%) calc(100% - 0.8rem) 55% / 0.35rem 0.35rem no-repeat,
+    linear-gradient(-45deg, transparent 50%, var(--ink) 50%) calc(100% - 0.45rem) 55% / 0.35rem 0.35rem no-repeat,
+    #fffaf0;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.sms-head {
+  max-width: 19rem;
+  margin: 1.6rem auto 0.5rem;
+  font: 700 0.75rem/1 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+
+.sms-list {
+  list-style: none;
+  max-width: 19rem;
+  margin: 0 auto;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.sms {
+  padding: 0.6rem 0.7rem;
+  background: #fffaf0;
+  border: 2px solid var(--ink);
+  border-radius: 0.2rem 0.9rem 0.9rem 0.9rem;
+}
+
+.sms:first-child {
+  background: var(--bolt);
+}
+
+.sms-text {
+  font: 500 0.88rem/1.35 var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.sms-time {
+  display: block;
+  margin-top: 0.25rem;
+  font: 600 0.68rem/1 var(--mono);
+  color: var(--ink-2);
+}
+
+.sms-none,
+.entry-none {
+  color: var(--mute);
+  font-size: 0.9rem;
+}
+
+/* ---------- the books ---------- */
+
+.books {
+  padding: 1.25rem 1rem 1.5rem;
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: 0.4rem;
+}
+
+.books h2 {
+  font-size: 1.7rem;
+  color: var(--bolt);
+}
+
+.books-sub {
+  margin-top: 0.4rem;
+  font-size: 0.88rem;
+  color: #cfc7b8;
+}
+
+#books-sum {
+  margin-top: 1rem;
+  display: grid;
+  gap: 0.3rem;
+  font: 500 0.8rem/1.4 var(--mono);
+}
+
+.sum-ok {
+  padding: 0.5rem 0.6rem;
+  background: var(--go);
+  color: #fff;
+  font-weight: 700;
+}
+
+.sum-bad {
+  padding: 0.5rem 0.6rem;
+  background: var(--stop);
+  color: #fff;
+  font-weight: 700;
+}
+
+.sum-mint,
+.sum-rate {
+  color: #cfc7b8;
+  overflow-wrap: anywhere;
+}
+
+.books-list {
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.entry {
+  padding: 0.55rem 0 0;
+  border-top: 1px solid #4a433a;
+}
+
+.entry:first-child {
+  border-top: 2px solid var(--bolt);
+}
+
+.entry-kind {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-weight: 700;
+  font-size: 0.92rem;
+}
+
+.entry-hash {
+  font: 400 0.66rem/1.6 var(--mono);
+  color: #8d8475;
+}
+
+.entry-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font: 500 0.8rem/1.5 var(--mono);
+}
+
+.entry-line.out .entry-sats {
+  color: #ff9b8e;
+}
+
+.entry-line.in .entry-sats {
+  color: #8fe0aa;
+}
+
+.entry-sats {
+  white-space: nowrap;
+}
+
+/* The other person's phone is a different colour, so nobody mixes the two up. */
+.seat-b .phone {
+  --shell: #7a2e1f;
+  --shell-2: #5c2116;
+}
+
+/* ---------- small screens: get to the phone fast ---------- */
+
+.hint {
+  position: fixed;
+  left: 0.5rem;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.7rem 0.8rem;
+  background: var(--ink);
+  color: var(--paper);
+  border: 2px solid var(--bolt);
+  border-radius: 0.5rem;
+  font: 700 1rem/1.15 var(--display);
+  font-stretch: 85%;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hint-n {
+  padding: 0.25rem 0.4rem;
+  background: var(--bolt);
+  color: var(--ink);
+  border-radius: 0.25rem;
+  font: 700 0.8rem/1 var(--mono);
+}
+
+.hint-num {
+  margin-left: auto;
+  font: 700 1.05rem/1 var(--mono);
+  color: var(--bolt);
+  white-space: nowrap;
+}
+
+@media (max-width: 899px) {
+  .demo {
+    padding-bottom: 4.5rem;
+  }
+  /* Only the step in hand is spelled out. The bars at the top show how many are left. */
+  .step.later {
+    display: none;
+  }
+  .step.done {
+    padding-top: 0.35rem;
+    padding-bottom: 0.35rem;
+  }
+  .step.done .step-ok {
+    display: none;
+  }
+}
+
+/* ---------- wide screens ---------- */
+
+@media (min-width: 900px) {
+  .hint {
+    display: none;
+  }
+  .warn,
+  .down,
+  .demo > .wolof-note {
+    margin-left: 2.5rem;
+    margin-right: 2.5rem;
+  }
+  .stage {
+    grid-template-columns: minmax(17rem, 21rem) minmax(0, 1fr);
+    align-items: start;
+    gap: 2.5rem;
+    padding: 1rem 2.5rem 0;
+  }
+  .guide {
+    position: sticky;
+    top: 1rem;
+  }
+  .tabs {
+    display: none;
+  }
+  .phones {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 19rem));
+    justify-content: space-evenly;
+    gap: 2rem;
+  }
+  .stage[data-show="a"] .seat-b,
+  .stage[data-show="b"] .seat-a {
+    display: block;
+  }
+  /* The second phone hangs a little lower: two people, not two columns. */
+  .seat-b {
+    margin-top: 2.75rem;
+  }
+  .books {
+    grid-column: 1 / -1;
+    padding: 1.75rem 2rem 2rem;
+  }
+  .books-list {
+    grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+    gap: 0.9rem 2rem;
+  }
+}
+
+@media (min-width: 1300px) {
+  .stage {
+    grid-template-columns: 21rem minmax(0, 1fr) 21rem;
+  }
+  .books {
+    grid-column: auto;
+    position: sticky;
+    top: 1rem;
+    max-height: calc(100vh - 2rem);
+    overflow: auto;
+  }
+  .books-list {
+    grid-template-columns: 1fr;
+  }
+}

@@ -28,6 +28,11 @@ export default tseslint.config(
     rules: { "no-console": "error" },
   },
   {
+    // Holds a function that Playwright runs inside the page.
+    files: ["scripts/stills.mjs"],
+    languageOptions: { globals: { document: "readonly" } },
+  },
+  {
     files: ["apps/gateway/src/**/*.ts"],
     rules: {
       "no-restricted-syntax": ["error", { selector: "CallExpression[callee.object.name='Date'][callee.property.name='now']", message: "Service code takes the time from the injected Clock, so tests can move it." }],

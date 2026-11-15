@@ -17,6 +17,6 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["packages/*/src", "packages/*/test", "apps/*/src", "apps/*/test", "scripts", "infra/regtest-init", "vitest.config.ts", "vitest.int.config.ts"],
-  "exclude": ["**/node_modules", "**/dist", "apps/simulator", "apps/voucher-web", "apps/verify", "apps/console"]
+  "include": ["packages/*/src", "packages/*/test", "apps/*/src", "apps/*/test", "apps/*/vite.config.ts", "playwright.config.ts", "scripts", "infra/regtest-init", "vitest.config.ts", "vitest.int.config.ts"],
+  "exclude": ["**/node_modules", "**/dist", "apps/simulator/src", "apps/voucher-web", "apps/verify", "apps/console"]
 }

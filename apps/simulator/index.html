@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Melax: bitcoin on any phone</title>
+    <meta name="description" content="Melax is a bitcoin wallet you use by dialling #2580#. No app, no internet. Lightning and Cashu ecash underneath. Test version." />
+    <meta name="theme-color" content="#f3ede2" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/src/base.css" />
+    <link rel="stylesheet" href="/src/phone.css" />
+    <link rel="stylesheet" href="/src/landing.css" />
+    <script type="module" src="/src/landing.ts"></script>
+  </head>
+  <body class="landing">
+    <header class="top">
+      <a class="mark" href="/" aria-label="Melax">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13.5 1 4 13.5h6L8.5 23 20 9.5h-6.5z" /></svg>
+        <span>melax</span>
+      </a>
+      <div class="langs" role="group" aria-label="Language">
+        <button type="button" data-lang="wo">Wolof</button>
+        <button type="button" data-lang="fr">Français</button>
+        <button type="button" data-lang="en">English</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="hero-words">
+          <p class="kicker" data-t="hero.kicker"></p>
+          <h1 data-t="hero.h1"></h1>
+          <p class="lede" data-t="hero.lede"></p>
+          <a class="cta" href="/demo" data-testid="cta" data-t="hero.cta"></a>
+          <p class="note" data-t="hero.note"></p>
+          <p class="wolof-note" data-t="wolof.note" data-opt hidden></p>
+        </div>
+        <div class="hero-phone" aria-hidden="true">
+          <div class="sun"></div>
+          <div class="phone phone-show">
+            <div class="phone-ear"></div>
+            <div class="lcd">
+              <div class="lcd-bar"><span class="lcd-bars"></span><span class="lcd-net">Melax</span></div>
+              <pre class="lcd-text" id="hero-screen"></pre>
+              <div class="lcd-input lcd-typed" id="hero-typed"></div>
+            </div>
+            <div class="softkeys"><span class="key key-ok">OK</span><span class="key key-del"></span><span class="key key-abc"></span><span class="key key-end"></span></div>
+            <div class="keys">
+              <span class="key key-num"><span class="key-digit">1</span></span><span class="key key-num"><span class="key-digit">2</span></span><span class="key key-num"><span class="key-digit">3</span></span>
+              <span class="key key-num"><span class="key-digit">4</span></span><span class="key key-num"><span class="key-digit">5</span></span><span class="key key-num"><span class="key-digit">6</span></span>
+              <span class="key key-num"><span class="key-digit">7</span></span><span class="key key-num"><span class="key-digit">8</span></span><span class="key key-num"><span class="key-digit">9</span></span>
+              <span class="key key-num"><span class="key-digit">*</span></span><span class="key key-num"><span class="key-digit">0</span></span><span class="key key-num"><span class="key-digit">#</span></span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="how">
+        <h2 data-t="how.title"></h2>
+        <ol class="ladder">
+          <li>
+            <span class="rung">1</span>
+            <div><h3 data-t="how.1.t"></h3><p data-t="how.1.d"></p></div>
+          </li>
+          <li>
+            <span class="rung">2</span>
+            <div><h3 data-t="how.2.t"></h3><p data-t="how.2.d"></p></div>
+          </li>
+          <li>
+            <span class="rung">3</span>
+            <div><h3 data-t="how.3.t"></h3><p data-t="how.3.d"></p></div>
+          </li>
+          <li>
+            <span class="rung">4</span>
+            <div><h3 data-t="how.4.t"></h3><p data-t="how.4.d"></p></div>
+          </li>
+        </ol>
+      </section>
+
+      <section class="line">
+        <div class="line-words">
+          <h2 data-t="line.title"></h2>
+          <p data-t="line.d"></p>
+        </div>
+        <div class="dial" aria-label="#2580*2*781112233*500#">
+          <span class="seg"><b>#2580</b><i data-t="line.1"></i></span>
+          <span class="seg"><b>*2</b><i data-t="line.2"></i></span>
+          <span class="seg"><b>*781112233</b><i data-t="line.3"></i></span>
+          <span class="seg"><b>*500#</b><i data-t="line.4"></i></span>
+        </div>
+      </section>
+
+      <section class="truth">
+        <div class="real">
+          <h2 data-t="real.title"></h2>
+          <p class="sub" data-t="real.sub"></p>
+          <ul>
+            <li data-t="real.1"></li>
+            <li data-t="real.2"></li>
+            <li data-t="real.3"></li>
+            <li data-t="real.4"></li>
+            <li data-t="real.5"></li>
+            <li data-t="real.6"></li>
+            <li data-t="real.7"></li>
+          </ul>
+        </div>
+        <aside class="notyet">
+          <h2 data-t="not.title"></h2>
+          <ul>
+            <li data-t="not.1"></li>
+            <li data-t="not.2"></li>
+            <li data-t="not.3"></li>
+            <li data-t="not.4"></li>
+            <li data-t="not.5"></li>
+            <li data-t="not.6"></li>
+            <li data-t="not.7"></li>
+          </ul>
+          <p class="honest" data-t="honest.d"></p>
+        </aside>
+      </section>
+
+      <section class="under">
+        <h2 data-t="under.title"></h2>
+        <p data-t="under.d"></p>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <a class="cta cta-dark" href="/demo" data-t="hero.cta"></a>
+      <p data-t="foot.made"></p>
+      <p data-t="foot.net"></p>
+    </footer>
+  </body>
+</html>

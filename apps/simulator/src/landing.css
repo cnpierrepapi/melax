@@ -1,0 +1,396 @@
+/* The landing page. Each band is laid out differently on purpose: words left and a tilted phone,
+   a ladder of steps, a full-width dark band for the dial string, an uneven two-column list, one loud
+   paragraph. Written for a 360 px screen first; wider screens are the exception at the bottom. */
+
+/* ---------- first screen ---------- */
+
+.hero {
+  position: relative;
+  padding: 1.25rem 1rem 0;
+  display: grid;
+  gap: 2.5rem;
+  /* The yellow disc runs off the right edge on purpose; the phone must still hang below the band. */
+  overflow-x: clip;
+}
+
+.kicker {
+  display: inline-block;
+  margin-bottom: 1rem;
+  padding: 0.3rem 0.55rem;
+  background: var(--ink);
+  color: var(--bolt);
+  font: 700 0.78rem/1.2 var(--mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.hero h1 {
+  font-size: clamp(2.9rem, 14vw, 7.2rem);
+  line-height: 0.92;
+  /* Not tighter than this: the apostrophe of "n'importe" runs into the i. */
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+.lede {
+  margin: 1.25rem 0 1.75rem;
+  max-width: 31rem;
+  font-size: 1.15rem;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.note {
+  margin-top: 1.4rem;
+  font: 600 0.9rem/1.3 var(--mono);
+  color: var(--mute);
+}
+
+.hero .wolof-note {
+  margin-top: 0.75rem;
+  max-width: 28rem;
+}
+
+.hero-phone {
+  position: relative;
+  padding: 1rem 1.5rem 0;
+  margin-bottom: -3.5rem;
+  z-index: 1;
+}
+
+.sun {
+  position: absolute;
+  width: 21rem;
+  height: 21rem;
+  right: -7rem;
+  top: -1.5rem;
+  border-radius: 50%;
+  background: var(--bolt);
+}
+
+.hero-phone .phone {
+  position: relative;
+  transform: rotate(-4deg);
+}
+
+/* ---------- the steps ---------- */
+
+.how {
+  padding: 6.5rem 1rem 3.5rem;
+  background: var(--paper-2);
+}
+
+.how h2,
+.truth h2 {
+  font-size: clamp(2rem, 8vw, 3.4rem);
+}
+
+.ladder {
+  list-style: none;
+  margin: 2rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 1.75rem;
+}
+
+.ladder li {
+  display: grid;
+  grid-template-columns: 3.4rem 1fr;
+  gap: 0.9rem;
+  align-items: start;
+}
+
+.rung {
+  font: 700 4.2rem/0.8 var(--display);
+  font-stretch: 75%;
+  color: transparent;
+  -webkit-text-stroke: 2px var(--ink);
+}
+
+.ladder li:first-child .rung {
+  color: var(--bolt);
+}
+
+.ladder h3 {
+  font-size: 1.55rem;
+  margin-bottom: 0.35rem;
+}
+
+.ladder p {
+  color: var(--ink-2);
+  max-width: 26rem;
+}
+
+/* ---------- the dial string ---------- */
+
+.line {
+  padding: 3.5rem 1rem;
+  background: var(--indigo);
+  color: var(--paper);
+}
+
+.line h2 {
+  font-size: clamp(2.2rem, 9vw, 4.2rem);
+  color: var(--bolt);
+}
+
+.line-words p {
+  margin-top: 1rem;
+  max-width: 34rem;
+  color: #d9dcf0;
+}
+
+.dial {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9rem 0.15rem;
+  margin-top: 2.25rem;
+}
+
+.seg {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.seg b {
+  font: 700 clamp(1.7rem, 8.5vw, 4rem) / 1 var(--mono);
+  letter-spacing: -0.02em;
+  padding-bottom: 0.45rem;
+  border-bottom: 4px solid var(--bolt);
+  margin-right: 0.35rem;
+}
+
+.seg i {
+  font: 600 0.8rem/1.2 var(--body);
+  font-style: normal;
+  color: var(--bolt);
+}
+
+/* ---------- what is real ---------- */
+
+.truth {
+  padding: 3.5rem 1rem;
+  display: grid;
+  gap: 2.5rem;
+}
+
+.truth .sub {
+  margin-top: 0.6rem;
+  font: 600 0.85rem/1.3 var(--mono);
+  color: var(--mute);
+}
+
+.truth ul {
+  list-style: none;
+  margin: 1.5rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.truth li {
+  position: relative;
+  padding-left: 2rem;
+}
+
+/* A tick, drawn from two borders. */
+.real li::before {
+  content: "";
+  position: absolute;
+  left: 0.35rem;
+  top: 0.15rem;
+  width: 0.5rem;
+  height: 0.95rem;
+  border: solid var(--go);
+  border-width: 0 0.24rem 0.24rem 0;
+  transform: rotate(40deg);
+}
+
+.real li {
+  font-size: 1.1rem;
+}
+
+.notyet {
+  padding: 1.5rem 1.25rem 1.75rem;
+  background: var(--paper-2);
+  border: 2px solid var(--ink);
+  border-radius: 0.4rem;
+}
+
+.notyet h2 {
+  font-size: 1.7rem;
+}
+
+.notyet li::before {
+  content: "";
+  position: absolute;
+  left: 0.25rem;
+  top: 0.3rem;
+  width: 0.8rem;
+  height: 0.8rem;
+  border: 2px dashed var(--mute);
+  border-radius: 50%;
+}
+
+.notyet li {
+  color: var(--ink-2);
+}
+
+.honest {
+  margin-top: 1.5rem;
+  padding-top: 1.1rem;
+  border-top: 2px solid var(--ink);
+  font-weight: 600;
+}
+
+/* ---------- under it ---------- */
+
+.under {
+  padding: 4rem 1rem;
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.under h2 {
+  font: 700 0.8rem/1 var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--bolt);
+}
+
+.under p {
+  margin-top: 1.25rem;
+  max-width: 54rem;
+  font: 600 clamp(1.45rem, 5.6vw, 2.9rem) / 1.18 var(--display);
+  font-stretch: 85%;
+  letter-spacing: -0.01em;
+}
+
+/* ---------- wide screens ---------- */
+
+@media (min-width: 900px) {
+  .landing {
+    font-size: 1.15rem;
+  }
+  .landing .cta {
+    font-size: 1.5rem;
+    padding: 1.25rem 1.9rem;
+  }
+  .hero {
+    grid-template-columns: 1.35fr 1fr;
+    align-items: start;
+    gap: 2rem;
+    padding: 2.5rem 2.5rem 0;
+  }
+  .hero h1 {
+    font-size: clamp(4rem, 8.4vw, 8.2rem);
+  }
+  .lede {
+    max-width: 36rem;
+    margin: 1.75rem 0 2.25rem;
+    font-size: 1.5rem;
+  }
+  .note {
+    font-size: 1rem;
+    margin-top: 1.9rem;
+  }
+  .hero-phone {
+    padding: 1rem 3rem 0 0;
+    margin-bottom: -8rem;
+  }
+  .hero-phone .phone {
+    transform: rotate(-4deg) scale(1.14);
+    transform-origin: 50% 0;
+  }
+  .sun {
+    width: 34rem;
+    height: 34rem;
+    right: -10rem;
+    top: -5rem;
+  }
+  .how {
+    padding: 11rem 2.5rem 6rem;
+  }
+  .how h2,
+  .truth h2 {
+    font-size: clamp(3rem, 5vw, 4.6rem);
+  }
+  /* Each step sits further right than the one before: a ladder, not a row of cards. */
+  .ladder {
+    gap: 2.75rem;
+    margin-top: 3rem;
+  }
+  .ladder li {
+    grid-template-columns: 6.5rem 1fr;
+    gap: 1.25rem;
+  }
+  .ladder li:nth-child(2) {
+    margin-left: 12%;
+  }
+  .ladder li:nth-child(3) {
+    margin-left: 24%;
+  }
+  .ladder li:nth-child(4) {
+    margin-left: 36%;
+  }
+  .rung {
+    font-size: 8rem;
+  }
+  .ladder h3 {
+    font-size: 2.6rem;
+    margin-bottom: 0.5rem;
+  }
+  .ladder p {
+    font-size: 1.3rem;
+    max-width: 30rem;
+  }
+  .line {
+    padding: 6rem 2.5rem;
+  }
+  .line-words p {
+    font-size: 1.3rem;
+    max-width: 40rem;
+  }
+  .dial {
+    margin-top: 3.5rem;
+  }
+  .seg b {
+    font-size: clamp(2.6rem, 6.3vw, 6.6rem);
+    margin-right: 0.6rem;
+    border-bottom-width: 6px;
+  }
+  .seg i {
+    font-size: 1.1rem;
+  }
+  .truth {
+    grid-template-columns: 1.5fr 1fr;
+    gap: 4rem;
+    padding: 6.5rem 2.5rem;
+    align-items: start;
+  }
+  .truth ul {
+    gap: 1.1rem;
+  }
+  .real li {
+    font-size: 1.4rem;
+    padding-left: 2.4rem;
+  }
+  .real li::before {
+    top: 0.35rem;
+  }
+  .notyet {
+    margin-top: 3rem;
+    padding: 2rem 1.75rem 2.25rem;
+    transform: rotate(1.2deg);
+  }
+  .notyet h2 {
+    font-size: 2.2rem;
+  }
+  .under {
+    padding: 6rem 2.5rem;
+    text-align: right;
+  }
+  .under p {
+    margin-left: auto;
+  }
+}
