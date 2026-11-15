@@ -92,6 +92,48 @@ unit tests on Linux. It is the first time this code ran on anything but this Win
 Not done in this phase, and said so in `docs/status.md`: the clean shutdown has never run, money enters an account
 only through a test helper, and the address on the screens is not payable yet.
 
+### Phase 5: something to look at
+
+`docker compose up`, then `http://localhost:8787`. A landing page says what Melax is and its button opens `/demo`:
+two phones with buttons that dial the real gateway, the SMS each one gets, and the books underneath. A guide walks
+a new visitor through four steps. The pages read in Wolof, French and English.
+
+What went in:
+
+- A real way in for money. `Wallet.deposit` takes a user and a payment hash, asks the gateway's own node whether that invoice settled and for how much, and only then turns the sats into ecash, with a history row and an SMS. The demo's top-up button uses it: the node that plays everybody else pays the gateway's node.
+- `apps/gateway/src/demo.ts`: what the simulator reads (`/sim/sms`, `/sim/people`, `/sim/state`), the top-up (`/sim/fund`) and the seed. Six people at a market in Dakar, each topped up with a real payment, then five payments between them.
+- `apps/gateway/src/static.ts`: the built pages, read once into memory. No request path reaches the disk.
+- `apps/gateway/src/boot.ts`: the connecting of things, taken out of `main.ts` so the seed script can use it.
+- `apps/simulator`: plain TypeScript and CSS built with Vite. The phone is drawn in CSS. The words are in one file in three languages, and the English is written into the HTML when the pages are built, so they read before any script runs.
+- The `app` service in `compose.yaml`, and Playwright for browser tests.
+
+The guide does not take the visitor's word for anything. A step is ticked when the gateway's SMS outbox shows it
+happened, and the next one opens only then. On a small screen only the step in hand is spelled out, and it stays
+pinned to the bottom while the guide is out of view.
+
+Tests came first for the gateway side: the unit tests for the routes, the seed and the pages failed on a missing
+module before `demo.ts` existed. The tests against the real mint were written after the code. Six passed on their
+first run and the seventh, the seed, found defect 29. The front end went the other way round: I built it, looked at stills, then wrote
+the browser tests. They found two real faults in the phone (defect 36).
+
+Numbers from this machine:
+
+- 282 unit tests in 16 s. 78 integration tests in 187 s. 10 browser tests in 20 s.
+- The gateway tests on Postgres 17: 166 unit and 22 integration, all passing.
+- `node scripts/mutate.mjs`: fifteen lines now, six of them new. All caught.
+- A clean start: volumes deleted, images already pulled and built, `docker compose up -d --wait` returned after 126 s with the `app` service healthy and six funded accounts. The seed itself takes 8 s.
+- `docker compose stop app` returned in 498 ms. Exit code 0, and the log's last line is `stopping` with `SIGTERM`. This is the first time the shutdown code ran (defect 26).
+- Memory with everything up: about 810 MB across nine containers. The gateway takes 214 MB and the mint 195 MB.
+- Page weight, gzipped, with scripts and styles: 13.1 KB for the landing page, 17.2 KB for the simulator.
+
+Looking at the pages. I took stills at 1440 and at 360 pixels in each language and read them before calling
+anything done. Fixed after looking: a "Connecting..." line that never went away, a page wider than its window on
+desktop, type too small on a wide screen, the phone too far down the page on a small one, the language switch
+sitting on the yellow disc, and the apostrophe of "n'importe" running into the i.
+
+Not done in this phase, and said so in `docs/status.md`: the demo routes have no rate limit, a deposit whose
+payment to the mint fails for good is not retried, and the pages were only opened in Chromium.
+
 ## Defect log
 
 | # | What happened | Cause | Fix |
@@ -124,3 +166,13 @@ only through a test helper, and the address on the screens is not payable yet.
 | 26 | The server could not be stopped from the shell during the manual start | `kill -INT` from Git Bash does not deliver a signal to a native Node process on Windows. I ended it with `taskkill`. So the clean shutdown code has never run | Written down as open in `docs/status.md` and in the phase 5 brief, to be checked in Docker |
 | 27 | `apps/gateway/package.json` pointed at `src/index.ts`, a file that never existed | Left over from the skeleton | Points at `src/app.ts` |
 | 28 | A test asked for a server outside demo mode with the in-memory SMS adapter and was refused at start | The test was wrong. The rule that refused it is the one that keeps a real deployment from "sending" receipts into memory | The test names a real adapter |
+| 29 | The demo seed opened six accounts and funded none. Every top-up failed | The node that plays everybody else could send only 55,194 sats. Until cash-out exists, money on the test network flows one way: world, gateway, mint. A day of test deposits had used the channel up | The regtest helper checks on start and every 30 s, and opens one more channel when a side can send less than 1,000,000 sats. `scripts/probe/balances.ts` shows where things stand. The mint's node is never paid back out: those sats back the ecash it issued |
+| 30 | With that fix in, the regtest helper crashed and restarted in a loop: "channels cannot be created before the wallet is fully synced" | It asked for the new channel in the same second it had mined a block. The first channels were already opened inside a retry. The new one was not | Same retry around the new call |
+| 31 | The simulator page kept saying "Connecting..." after it had connected | The function that fills in the words also un-hid every element whose sentence was not empty, to hide a note that only exists in Wolof. So it un-hid the loading line each time it ran | Only elements marked `data-opt` are hidden or shown by their text |
+| 32 | The landing page was wider than the window on desktop, and my own check said it was not | The yellow disc hangs off the right edge. The body hid the overflow, so `scrollWidth` reported nothing while the full-page still showed 104 extra pixels | The first band clips its own disc and the body hides nothing. The browser test measures every element's box and fails on anything that sticks out |
+| 33 | Caught on reading, before the first run: a test's stand-in for a Lightning node would have failed every test that returned it from an async function | The stand-in throws on any property it does not know. An async function that returns an object looks for a `then` on it | The stand-in answers `undefined` for `then` |
+| 34 | `npm run lint` failed on the stills script: `document` is not defined | The script holds a function that runs inside the page | A lint block for that one file. The browser tests got their own type-check config with the DOM types, so server code still cannot use them by accident |
+| 35 | A browser test expected the pinned hint to be hidden and found it showing | The test was wrong. Pressing the keys had scrolled the page down to the phone, which is exactly when the hint is meant to show | The test now checks the hint while the guide is out of view, and that a tap on it brings the guide back |
+| 36 | Found while writing the browser tests: after a closing screen, a pressed digit made the dial line "#2580#2", which the phone refuses. And the green key had to be pressed twice to dial again | The phone went back to its idle line, which already holds the code, and then added the digit. The green key only cleared the screen | The first digit after a closing screen only clears it. The green key dials again in one press |
+| 37 | The `app` service wrote a log line every 3 s | The health check called `/healthz` that often, forever | 2 s while starting, then every 30 s |
+| 38 | The session building this phase was cut off halfway, with nothing committed | A usage limit | The state went into the top of `docs/PLAN.md` as a list of what ran and what was left, and the next session finished from that list |

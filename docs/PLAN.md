@@ -8,7 +8,7 @@ Target: Dakar Bitcoin Hack 2026. Submissions close Fri 20 Nov 2026 at 20:00 UTC 
 Read this file before touching the code. It says what is done, what comes next, and which rules keep new work
 from breaking old work. Whoever finishes a phase updates it before stopping.
 
-Last updated: 15 Nov 2026, after phase 4.
+Last updated: 15 Nov 2026, after phase 5.
 
 ## 1. How this build runs
 
@@ -38,8 +38,8 @@ Order is by what a judge can see and check first. The owner can reorder the phas
 | 2 | Ecash client and vault | Done | `npm run test:int`: cashu 15, vault 21. Vault also ran 1,000 random sends (671 s) |
 | 3 | Limits, SMS, USSD SDK, wording in three languages | Done | `npm test`: limits 10, sms 15, ussd 18, i18n 9 |
 | 4 | Wallet core over USSD: accounts, PIN, balance, send, receive, history, account menu, receipts by SMS | Done | `npm test`: gateway 143 (machine 72, users 17, http 17, perform 13, smsout 9, rates 8, config 7). `npm run test:int`: wallet 15. Both on PGlite and on Postgres 17. `node scripts/mutate.mjs`: 9 of 9 caught. The server was started once on the regtest stack (section 3, "What phase 4 handed over") |
-| 5 | Something to look at: web phone simulator, landing page with a demo button, one-command start, demo seed | **Next** | See section 3 |
-| 6 | Agents: cash-in and cash-out with hold-invoice escrow, bonds, disputes | Not started | Section 7 |
+| 5 | Something to look at: web phone simulator, landing page with a demo button, one-command start, demo seed, a real top-up | Done | `npm test`: 282 in all (demo 22, config 8, page copy 7 are new). `npm run test:int`: 78 (demo 7). `npm run test:e2e`: 10. Gateway tests also on Postgres 17. `node scripts/mutate.mjs`: 15 of 15 caught. Clean `docker compose up`: 126 s. Stills looked at in three languages |
+| 6 | Agents: cash-in and cash-out with hold-invoice escrow, bonds, disputes | **Next** | See section 3 |
 | 7 | Vouchers and merchants | Not started | Section 7 |
 | 8 | Lightning address, pay codes, moving to a smartphone | Not started | Section 7 |
 | 9 | Scam shield and account recovery | Not started | Section 7 |
@@ -54,125 +54,169 @@ The scope rule from the first plan still holds: everything gets built. Phases 14
 carry the most risk for the least a judge can check, and phase 13 comes before them so a submission exists even
 if time runs out.
 
-## 3. Next phase in detail: phase 5, something to look at
+## 3. Next phase in detail: phase 6, agents
 
 ### What it delivers
 
-`docker compose up` on a clean machine, then `http://localhost:8787`. A landing page says what Melax is. Its main
-button opens `/demo`: two feature phones side by side that dial the real gateway, the SMS each one receives, and a
-panel that shows what the last action did in the ledger and at the mint. Six seeded people have balances and a
-little history, so a send works on the first try. A "top up" button puts regtest sats into an account through a
-real Lightning payment.
+Francs become sats and sats become francs through a person: an agent with a mobile-money account. Melax never
+touches the francs. During a cash-in the agent's sats sit in a Lightning payment that is locked, not delivered,
+until the agent says the francs arrived. During a cash-out the user's ecash sits in an escrow account until the
+user says the francs arrived.
 
-Until this phase exists there is nothing a judge can click, and money can only enter an account through a test helper.
+Menu entries 5 (Depot) and 6 (Retrait) stop answering "Bientot disponible". An agent gets a desk in the menu. In
+the simulator, the second phone can be an agent, so a visitor can walk a cash-in between two phones.
+
+### Read first
+
+- Rules 14 to 18 (Lightning), 44 to 50 (gateway), 55 and 60 (deposits and SMS kinds) in section 4.
+- `packages/lightning/test/contract.ts`: "hold then settle", "hold then cancel", "cancel before payment". It shows how to pay a hold invoice without waiting for the payment to finish, and `quietBalance`.
+- `apps/gateway/src/wallet.ts`, `deposit` and `onDepositSettled`: a cash-in ends the same way.
+- `packages/vault/src/index.ts`, `melt`: a cash-out ends there.
+- `packages/i18n/src/messages.ts`: the screens and SMS for this phase are already written (`agents.*`, `dep.*`, `wd.*`, `dispute.*`, `agent.*`, `sms.dep_*`, `sms.wd_*`, `sms.dispute*`). Use them. Add only what is missing, in three languages.
+
+### Measure before building (first task)
+
+Write `scripts/probe/hold-cltv-probe.ts` and put its numbers in the build log before any engine code:
+
+1. How many blocks does a held payment survive on our LND nodes? `makeHoldInvoice` in `packages/lightning/src/lnd.ts` sets no `cltv_expiry`. The regtest helper mines a block every 30 s, so a default of some tens of blocks would end a held payment well inside the 45 minute window. Hold a payment, mine blocks, and find the block at which LND cancels it on its own.
+2. Set `cltv_expiry` on the hold invoice from a new setting (`ESCROW_CLTV_BLOCKS`), sized for the 3 hour hard cap on the network in use, and show with the probe that the payment survives that long. Check that the paying node accepts that delta.
+3. What does the gateway node report for a held payment after the invoice's own expiry time has passed?
+
+Do not write "the window is 45 minutes" anywhere until the probe shows a payment held that long.
 
 ### Where the code goes
 
 ```
-apps/gateway/src/demo.ts     demo-only routes, the funding path, seedDemo(app). Used only when config.demo is true
-apps/gateway/src/static.ts   serves the built front end from a map of files read once at boot
-apps/gateway/src/http.ts     mounts both, behind `if (config.demo)`
-apps/gateway/src/main.ts     runs seedDemo on an empty database when DEMO_SEED=1
-apps/simulator/              Vite and plain TypeScript, two pages: index.html (the landing page) and demo.html (/demo)
-scripts/demo-seed.ts         the same seed, for running by hand
-compose.yaml                 gains the `app` service
-e2e/demo.spec.ts             Playwright
+apps/gateway/src/escrow/trade.ts      the trade state machine, pure: (state, event) -> state or refusal
+apps/gateway/src/escrow/engine.ts     Escrow: start, agentConfirm, agentDecline, agentSent, userConfirm, cancel, dispute, decide, sweep
+apps/gateway/src/escrow/agents.ts     Agents: offers, bond, the agent's wallet handle
+apps/gateway/src/schema.ts            gateway/002-agents: tables `agents` and `trades`
+apps/gateway/src/ussd/machine.ts      flows 5 and 6, the agent desk
+apps/gateway/src/ussd/perform.ts      their effects
+apps/gateway/src/http.ts              POST /ops/escrow/decide, mounted only when OPERATOR_SECRET is set
+apps/gateway/src/demo.ts              two seeded agents, POST /sim/decide, agents in /sim/people
+apps/gateway/src/main.ts              escrow.sweep() once before listening, then on a timer
 ```
 
-`apps/simulator` is browser code with its own `tsconfig.json`. The root `tsconfig.json` already leaves it out, and
-`scripts/build-web.mjs` builds every front end it finds.
+The first plan put this in `apps/escrow`. It is a module inside the gateway instead (decision 51): rule 52 says
+one process until sessions and the send queue move to the database.
 
-### Demo routes
+### The two flows
 
-All of them exist only with `MELAX_DEMO=1`. They are the only routes with no authentication, which is why the
-server refuses to start in demo mode by accident (rule 49 and `config.test.ts`).
+Cash-in (the user buys sats with francs):
 
-- `POST /ussd/sim`: exists since phase 4.
-- `GET /sim/sms?phone=`: that number's messages, from `outbox.list(phone)`.
-- `GET /sim/people`: the seeded first names and numbers, for the phone pickers. The seeded accounts share one demo code, shown on the page.
-- `GET /sim/state`: what the panel draws. The last 20 journal entries with their postings, the totals from `vault.auditAll()`, the mint's name and keyset, the rate. Account names may be shown with first names in place of user ids. It must never return a proof, a number or a sealed column.
-- `POST /sim/fund { phone, fcfa }`: a real deposit. The world node pays an invoice of the gateway node, the ledger books `ext:lightning -> float:node`, and `vault.mintFor` runs with `meta: { t: "deposit", ... }`. A new settle handler `deposit` writes the history row (kind `deposit`, counterparty `Lightning`) and queues `sms.ln_received`. Phase 8 reuses this handler behind a real invoice listener, so write it for that. Capped at 25,000 FCFA per call. Mounted only when the world node's credentials are configured (`DEMO_WORLD_LND_REST_URL`, `DEMO_WORLD_LND_MACAROON_PATH`, `DEMO_WORLD_LND_TLS_CERT_PATH`) and only when `ln.capabilities()` says the network is regtest.
+1. User: 5, amount in FCFA, picks an agent from a short list (name, method, sats they will get). Confirm. No code: nothing of the user's moves.
+2. The engine draws a random preimage, seals it in the trade row, and makes a hold invoice for its hash on the gateway's node. It asks the agent's wallet to pay it and does not wait for that call to return. The trade is `open`.
+3. The node reports the invoice `accepted`: the trade is `held`. SMS to the user with the agent's mobile-money number, name, amount and reference (`sms.dep_user`). SMS to the agent (`sms.dep_agent`).
+4. The user sends francs outside Melax.
+5. Agent desk: "did you receive X from 77*****67?" Yes, then the agent's code. The engine settles the invoice with the preimage, then credits the user the way `Wallet.deposit` does, under the flow name `cashin`. History rows and SMS for both sides come from the settle handler. The trade is `done`.
+6. No confirmation 45 minutes after `held`: the engine cancels the invoice, the agent's sats return, both get an SMS. `expired`.
 
-### The seed
+Cash-out (the user sells sats for francs):
 
-`seedDemo(app)`: six people at a market in Dakar, registered with `users.register`, funded through the funding
-path above, then a few sends between them so nobody's history is empty. It does nothing when a user already
-exists. Merchants and agents join the seed in phases 6 and 7; the `role` column is already there.
+1. User: 6, amount, agent, confirm, code. The limits apply: this is a spend.
+2. `vault.transfer` moves the sats from `user:<id>` to `escrow:<tradeId>`. The trade is `locked`. SMS to the agent with the user's number, name and amount (`sms.wd_agent`).
+3. The agent sends francs outside Melax, then marks it sent on the desk. `sent`. SMS to the user (`sms.wd_user_sent`).
+4. User: 6 shows the open trade (`wd.pending`). "Yes, received", then the code. The engine asks the agent's wallet for an invoice and calls `vault.melt` from `escrow:<tradeId>`. `done` when the melt settles.
+5. The agent never marks it sent within 45 minutes, or declines: the sats go back to the user. `refunded`.
+6. The agent marked it sent and the user does not confirm within 45 minutes: nobody can be believed without a look. The trade becomes `disputed`.
 
-### The `app` service
+Rules both flows keep:
 
-Built from the existing `Dockerfile`. Depends on `regtest-init`, `postgres` and `mint` being healthy. Needs:
-`MELAX_DEMO=1`, `DEMO_SEED=1`, a `MELAX_PEPPER` written in the compose file and marked as a demo value, `HOST=0.0.0.0`,
-`DATABASE_URL` and `MINT_URL` pointing at the services, the LND paths, and port 8787 published on 127.0.0.1.
+- One open trade per user. An agent's open cash-ins can never add up to more than the agent's bond.
+- Every money step has its own idempotency key built from the trade id (`cashin:<id>:credit`, `cashout:<id>:lock`, `cashout:<id>:pay:<n>`, `slash:<id>`).
+- The state machine in `trade.ts` is the only place that says which move is allowed. The engine applies a move with `UPDATE trades SET state = $new WHERE id = $id AND state = $old` and checks one row changed. Whoever loses that race does nothing.
+- The preimage leaves the database in one place: the function that settles.
+- Rule 15: a cancelled trade's invoice is watched until it expires, and a payment that arrives late is cancelled on sight. `sweep()` does this.
 
-Two things to settle while doing it:
+### Bonds and disputes
 
-- The image runs as user `node`. The LND macaroon in the `lnd-gw` volume is readable by root only, which is why `regtest-init` runs as `0:0`. Either the demo service does the same, or `regtest-init` copies the two files somewhere readable. Pick one and write it down.
-- The machine has 3.1 GB for Docker. Measure with `docker stats` once the app is up. The stack has to stay under about 2.5 GB.
+- An agent's bond is ecash under the vault owner `bond:<agentUserId>`. The agent moves it there from their own balance on the desk, with their code. It cannot be taken back while a trade or a dispute of theirs is open.
+- A dispute on a cash-out is simple: the sats are in `escrow:<tradeId>` and stay there until someone decides.
+- A dispute on a cash-in cannot keep a Lightning payment locked for a day. So: while the payment is still held, a decision for the user settles it. When the hard cap is reached first, the engine cancels the invoice, the agent gets the sats back, and a later decision for the user is paid out of the agent's bond (`vault.transfer` from `bond:<agent>` to the user). This is why open cash-ins are capped by the bond.
+- `Escrow.decide({ tradeId, winner, arbiter, note })` does the money and writes one `audit_log` row. It is reached through `POST /ops/escrow/decide` behind `OPERATOR_SECRET` (rule 49), and through `POST /sim/decide` in demo mode. The console in phase 11 calls the same function. The plan calls the decision "a signed ledger event". Signing comes with the Nostr keys in phase 10. Until then call it recorded, not signed.
 
-### The front end
+### The agent's wallet
 
-- Plain TypeScript and CSS, no framework, under 30 KB gzip per page.
-- The phone: a keypad that types, a screen that shows exactly the 160 characters the gateway sent, a line for dial strings. It talks to `/ussd/sim` and polls `/sim/sms`.
-- The landing page opens by saying what the product is, has the "try the demo" button in the first screen, and says plainly what is real and what is not (take it from `docs/status.md`).
-- All copy follows the owner's voice rules: short plain sentences, no em dashes, no hype words.
-- No stock template look: no row of three identical cards, no gradient hero. Draw the phone in code.
-- It must work at 360 px wide with no sideways scroll.
-- Before it is called done: take stills with Playwright at desktop width and at 360 px, look at them, and fix what looks wrong.
+The engine needs two things from an agent's wallet: pay this invoice, and give me an invoice. That is a
+`LightningBackend`. On regtest the seeded agents use the world node. A real agent links a wallet by Nostr Wallet
+Connect, and its connection string is sealed in the `agents` row with its own purpose tag.
+
+The NWC sandbox and our regtest mint are on different networks. A sandbox wallet cannot pay the regtest mint, so
+a whole cash-in with ecash cannot run on the sandbox. What can: the Lightning leg of the escrow (open, wait for
+`accepted`, settle, cancel, and the late payment of rule 15) with the gateway's side on `NwcBackend`. Test the
+leg on both backends and the whole flow on regtest. Do not write that both flows pass on the sandbox.
 
 ### Tests to write first
 
-Unit (`apps/gateway/test/demo.test.ts`):
-- every `/sim/*` route answers 404 without demo mode;
-- `/sim/sms` returns one number's messages and nobody else's;
-- `/sim/state` holds no proof secret, no phone number and no sealed column (dump it and search);
-- `/sim/fund` refuses an amount above the cap, a malformed number and a number with no account, and is not mounted without the world node's credentials;
-- the static handler answers 404 for `..`, encoded dots and absolute paths, and sends the right content type;
-- the seed run twice leaves the same six accounts.
+Unit (`apps/gateway/test/escrow.test.ts`, more cases in `machine.test.ts`, new golden files in three languages):
+- the trade machine: for every state and every event, the move is in the table or it is refused. Nothing leaves `done`, `expired`, `refunded` or a decided dispute;
+- starting is refused when: the amount is outside the agent's range, the agent is off, the agent is the user, the user already has an open trade, the agent's open cash-ins plus this one pass the bond, no agent fits (`agents.none`);
+- a cash-out start is refused over a limit and over the balance, and counts toward the day's limit from the moment it locks. A refund gives the room back;
+- only the trade's agent can confirm, decline or mark sent, and only with their code. Only the trade's user can confirm a cash-out, and only with theirs;
+- the desk is not in the menu of someone who is not an agent;
+- every new code prompt is in `PIN_STEPS`, and the existing "never resumes at a code prompt" and "no state holds a code" lists include the new flows;
+- `/ops/escrow/decide` does not exist without its secret, and a wrong secret looks like a missing path;
+- the mobile-money number of an agent and the number of a user are sealed in the database and in no log.
 
-Integration (`apps/gateway/test/demo.itest.ts`):
-- a top-up moves real sats from the world node into ecash, shows in the history, queues the SMS, and ends with `expectConsistent()`;
-- a top-up whose mint call loses its reply is completed once by `vault.recover()`, with its history row;
-- the seed on an empty database gives six accounts that pass `vault.auditAll()`.
+Integration (`apps/gateway/test/escrow.itest.ts`, real mint and nodes, the agent's wallet is the world node):
+- cash-in: while `held`, the world node is down by the amount and `float:node` is unchanged. After the agent confirms, the user holds that much ecash, both histories and both SMS exist, `expectConsistent()`;
+- cash-in times out: every sat is back on the world node (`quietBalance`), the user has nothing, both got the SMS;
+- confirm and time-out at the same moment, many times over: exactly one wins, and the books are consistent either way;
+- the process dies after the agent's confirmation is stored and before the node settled: a restart settles and credits once;
+- the mint's reply is lost while crediting: recovery credits once;
+- a late payment to a cancelled trade is cancelled on sight;
+- cash-out: sats leave the user for `escrow:<id>`, the agent marks sent, the user confirms, the world node receives. The fee comes out of the locked amount, what is left returns to the user, and `escrow:<id>` ends at zero;
+- cash-out refunded after 45 minutes with no "sent": the user has every sat back;
+- cash-out, the pay-out fails: nothing is lost, the trade can be paid again with a fresh invoice;
+- a cash-out dispute decided each way; a cash-in dispute decided for the user while held (settles) and after the hard cap (paid from the bond, bond reduced);
+- a bond cannot be withdrawn with a trade open;
+- a random run: starts, confirmations, cancellations and clock jumps in any order over many trades end with `expectConsistent()` and no closed trade's escrow account above zero;
+- the logs of the whole file hold no number, code, name, invoice or preimage.
 
-End to end (`e2e/demo.spec.ts`, against the compose stack):
-- the landing page loads and its button opens `/demo`;
-- phone A sends 500 F to phone B, B's inbox shows the SMS, the panel shows the ledger lines;
-- a wrong code shows the tries left;
-- at 360 px nothing scrolls sideways.
+On the NWC sandbox (`escrow.nwc.itest.ts`): the escrow's Lightning leg, including rule 15.
 
-Run the gateway tests once with `TEST_DATABASE_URL` set (section 6) before calling the phase done.
+End to end (`e2e/agents.spec.ts`): a visitor's phone starts a cash-in with a seeded agent, the agent's phone confirms it, the visitor's SMS and balance show it.
+
+Add to `scripts/mutate.mjs`: the bond cap, the agent's code on a confirmation, the state check in the `UPDATE`, the user's code on a cash-out confirmation.
 
 ### Not in this phase
 
-Agents, vouchers, merchants, a payable Lightning address, hosting. Their menu entries stay stubs.
+Publishing offers on Nostr and ratings (phase 10). The operator console (phase 11). Automatic confirmation
+through a mobile-money API (phase 15). A separate web page for agents: the desk in the menu and the second phone
+of the simulator cover it, and the page can come with the console.
 
 ### Done when
 
-A clean `docker compose up` gives a working wallet in the simulator in under 5 minutes, timed and written into the
-build log. `npm test`, `npm run test:int` and `npm run test:e2e` pass. `npx tsc --noEmit` and `npm run lint` are
-clean. `docker compose stop app` exits within ten seconds (see the first gap below). The items in section 1 point 5 are updated.
+Both flows run between two phones in the simulator. `npm test`, `npm run test:int` and `npm run test:e2e` pass,
+the gateway tests pass with `TEST_DATABASE_URL`, `npm run typecheck` and `npm run lint` are clean, and
+`node scripts/mutate.mjs` catches every line. The probe's numbers are in the build log. The items in section 1
+point 5 are updated, and section 3 holds the brief for phase 7.
 
-### What phase 4 handed over
+### What phase 5 handed over
 
-The wallet works through the USSD engine on regtest with real ecash. What exists:
+`docker compose up`, then `http://localhost:8787`: a landing page, and at `/demo` two phones that dial the real
+gateway, with a four-step guide, the SMS of each phone and the books. What exists:
 
-- `apps/gateway`: configuration, tables, accounts and codes, the rate, the wallet, the SMS outbox, inbound SMS, the menu machine, the effect runner, the HTTP routes, the boot file. Section 5 has the map.
-- Routes: `GET /healthz`. `POST /ussd/sim` in demo mode. `POST /ussd/at/:secret`, `POST /ussd/http`, `POST /sms/asg`, `POST /sms/httpsms`, each mounted only when its secret is set.
-- The server was started once on the regtest stack against Postgres 17: sign-up, balance and limits over `/ussd/sim`, the live rate from CoinGecko (38,919,778 F per bitcoin that day), one SMS handed to the demo adapter by the timer.
-- The gateway tests pass on PGlite and on Postgres 17.
-- The CI workflow ran on GitHub after the push and passed: type check, lint and the 252 unit tests on Linux. GitHub warns that `actions/checkout@v4` and `actions/setup-node@v4` were written for Node 20. Move them to their next major version when one of the next phases touches the workflow.
+- `Wallet.deposit` and its settle handler: the way sats that arrived on the gateway's node become a user's ecash.
+- `apps/gateway/src/demo.ts`, `static.ts`, `boot.ts`. Routes `GET /sim/sms`, `GET /sim/people`, `GET /sim/state`, `POST /sim/fund`, and the pages, all in demo mode only.
+- `apps/simulator`: the two pages and their words in three languages.
+- The `app` service. A clean start took 126 s and stopping it took half a second, exit code 0.
+- `e2e/demo.spec.ts`: 10 browser tests. `scripts/stills.mjs` for looking at the pages.
 
 Gaps that are known and not closed. Do not describe any of these as done:
 
-1. Shutdown on SIGINT and SIGTERM is written (`main.ts`, `stop()`) and has never run: a signal sent from Git Bash on Windows does not reach the Node process. Check it in Docker in phase 5.
-2. Money enters an account only through the test helper `fund()` in `wallet.itest.ts`. The funding path above replaces it.
+1. The demo routes have no rate limit. A hosted demo needs one first (phase 13).
+2. A deposit whose payment to the mint fails for good is logged and not retried. The sats stay in `float:node`. Phase 8 must close this before real invoices arrive, and phase 6 must not make it worse: a cash-in that reaches this state has already settled the agent's payment.
 3. The Lightning address on the screens is not payable until phase 8.
-4. A payment to a number with no account is refused (`send.notfound`) until phase 7 turns it into an SMS voucher.
-5. Sessions (`MemorySessions`) and the per-user send queue (`Wallet.serial`) live in the memory of one process. Two gateway processes would break the limit guarantee. Phase 12.
-6. A send that runs past the 12 second step budget and is then refused by a limit or the balance was already told "you will get an SMS", and none comes. Phase 12.
+4. A payment to a number with no account is refused until phase 7.
+5. Sessions and the per-user send queue live in the memory of one process. Phase 12.
+6. A send that runs past the step budget and is then refused sends no SMS. Phase 12.
 7. Nothing limits how many numbers one caller can look up on the send screen. Phase 9.
-8. Three new Wolof strings (`soon`, `send.notfound`, and the reuse of two onboarding strings in the code change flow) are as unreviewed as the rest.
+8. All Wolof, in the menus and on the pages, is unreviewed.
+9. `static.ts` serves one folder. The voucher page (phase 7), the verify page (phase 10) and the console (phase 11) either become more pages of `apps/simulator` or get a second mount. Decide in phase 7 and write it down.
+10. The pages were opened in Chromium only.
+11. GitHub warns that `actions/checkout@v4` and `actions/setup-node@v4` were written for Node 20. The workflow was not touched in phase 5. The browser tests and the integration tests do not run in CI yet (phase 12).
 
 ## 4. Rules that keep the build from breaking
 
@@ -253,6 +297,23 @@ Each rule exists because something depends on it. The file or test that guards i
 53. The sats of a send are the ones the confirm screen showed. `Wallet.send` refuses when they are more than 5 % away from the current rate. Screens that show francs get the rate from `Rates.get()` and from nowhere else.
 54. A variable that is set but empty is treated as not set (`loadConfig`). A failed configuration check names the variable and the rule, never the value.
 
+### Deposits, the demo and the pages (from phase 5)
+
+55. Sats that arrive over Lightning become a user's ecash through `Wallet.deposit` or in the same order: ask the gateway's own node, go on only for a settled invoice, credit the amount the node reports, post under `recv:<paymentHash>`, mint under `mint:<paymentHash>`. Never credit an amount a caller supplied.
+56. What only makes sense in a demo is refused outside demo mode by `loadConfig` (`DEMO_SEED`, `DEMO_WORLD_LND_*`). Demo routes live in `apps/gateway/src/demo.ts` and are mounted by `mountDemo`, behind the same `if (config.demo)` as `/ussd/sim`.
+57. The node that pays top-ups reaches the app only through `regtestWorld`, which hands it over when both nodes report regtest. Do not build it anywhere else.
+58. `/sim/state` shows first names in place of user ids and nothing else about a person. A new field there goes through the test that dumps the page and searches it (`demo.test.ts`, `demo.itest.ts`).
+59. Pages are served from the map `loadStatic` fills at start. No handler may build a file path from a request.
+60. The simulator's guide and the browser tests read the `kind` of four SMS: `welcome`, `deposit`, `sent`, `received`. Those names are an interface now. Renaming one breaks the guide.
+61. The seeded people, their numbers (`+22177000010x` and so on, in `DEMO_PEOPLE`) and `DEMO_PIN` are used by the browser tests. Add people at the end of the list.
+62. The pages allow scripts, styles and requests from this server only (`CSP` in `static.ts`). So: no inline script, no inline style attribute set from markup, nothing from a CDN, no web font. The pages write text with `textContent`, never markup.
+63. Every word on a page is in `apps/simulator/src/copy.ts`, in English, French and Wolof, and reaches the HTML through `data-t`. The words on the phone's own screen come from the gateway. The one exception, `screens`, is checked against `packages/i18n` by `apps/simulator/test/copy.test.ts`.
+64. `boot.ts` is the only place that connects the database, the mint and the nodes. `main.ts` adds the port, the timers and the signals. A script that needs an `App` calls `boot()`.
+65. Browser code has its own type-check configs (`apps/simulator/tsconfig.json`, `e2e/tsconfig.json`). The root one has no DOM types, so server code cannot use them by accident. `npm run typecheck` runs all three.
+66. The browser tests run against the `app` container. After any change under `apps/gateway`, `apps/simulator` or `packages`, run `docker compose up -d --build --wait app` before `npm run test:e2e`.
+67. Until cash-out exists, test money flows one way: world node, gateway node, mint. The regtest helper adds a channel when a side runs low. If top-ups start failing, run `node scripts/probe/balances.ts` first.
+68. A page is not done until its stills have been looked at: `node scripts/stills.mjs`, then open the files in `stills/` at 1440 and 360 px in each language. Sideways overflow is measured by element boxes (`sticksOut` in `e2e/demo.spec.ts`), because a page can hide it from `scrollWidth`.
+
 ## 5. Code map
 
 | Path | What it is | Main exports | Tests |
@@ -262,7 +323,7 @@ Each rule exists because something depends on it. The file or test that guards i
 | `packages/ledger` | Database handle, migrations, the journal | `createPgDb`, `createMemoryDb`, `migrate`, `truncateAll`, `post`, `balance`, `allBalances`, `verifyLedger` | `ledger.test.ts` |
 | `packages/lightning` | One interface, two adapters, invoice checks | `LightningBackend`, `LndBackend`, `NwcBackend`, `decodeInvoice`, `checkInvoice`, `feeCapSat` | `invoice.test.ts`, `contract.ts` run by `lnd.itest.ts` and `nwc.itest.ts` |
 | `packages/cashu` | Mint client: plan, run, recover | `MintClient` (`planSwap`, `runSwap`, `recoverSwap`, `mintQuote`, `planMint`, `runMint`, `recoverMint`, `meltQuote`, `planMelt`, `runMelt`, `checkMelt`, `states`, `encodeToken`, `decodeToken`, `verifyOffline`) | `mint.itest.ts` |
-| `packages/vault` | Sealed proofs plus ledger plus recovery | `Vault` (`mintFor`, `transfer`, `exportToken`, `importToken`, `melt`, `writeOffSpent`, `resume`, `recover`, `audit`, `auditAll`, `onSettled`), `vaultMigrations`, `FLOAT_NODE` | `vault.itest.ts` |
+| `packages/vault` | Sealed proofs plus ledger plus recovery | `Vault` (`mintFor`, `transfer`, `exportToken`, `importToken`, `melt`, `writeOffSpent`, `findOp`, `resume`, `recover`, `audit`, `auditAll`, `liveProofs`, `verifyHoldingsWithMint`, `onSettled`), `vaultMigrations`, `FLOAT_NODE` | `vault.itest.ts` |
 | `packages/limits` | Spend tiers, PIN lockout, delays | `TIERS`, `tierFor`, `checkSpend`, `onPinFailure`, `onPinSuccess`, `isPinLocked`, `withdrawalDelayMs` | `limits.test.ts` |
 | `packages/sms` | GSM-7, inbound commands, phone-gateway adapters | `assertGsm7`, `toGsm7`, `smsSegments`, `parseCommand`, `AndroidSmsGateway`, `HttpSms`, `MemorySms`, `parseAsgWebhook`, `parseHttpSmsWebhook` | `sms.test.ts` |
 | `packages/ussd` | Menu SDK | `con`, `end`, `menu`, `Machine`, `UssdRuntime`, `MemorySessions`, `africasTalking`, `genericHttp`, `simulator` | `ussd.test.ts` |
@@ -276,28 +337,36 @@ Each rule exists because something depends on it. The file or test that guards i
 | `apps/gateway/src/smsout.ts` | SMS outbox, sealed, retried | `SmsOutbox` (`queue`, `flush`, `list`) | `smsout.test.ts` |
 | `apps/gateway/src/smsin.ts` | Inbound SMS commands | `SmsInbound.handle` | `http.test.ts` |
 | `apps/gateway/src/settle.ts` | Routes the vault's settle hook by flow | `SettleRouter` (`on`, `dispatch`) | `wallet.itest.ts` |
-| `apps/gateway/src/wallet.ts` | Balance, resolve, quote, send, history, limits. Writes history and receipts when a send settles | `Wallet` | `wallet.itest.ts`, `perform.test.ts` |
+| `apps/gateway/src/wallet.ts` | Balance, resolve, quote, send, deposit, history, limits. Writes history and receipts when a send or a deposit settles | `Wallet` | `wallet.itest.ts`, `perform.test.ts`, `demo.test.ts`, `demo.itest.ts` |
 | `apps/gateway/src/ussd/machine.ts` | The menus as a pure machine | `createWalletMachine`, `runtimeTexts`, `PIN_STEPS`, types `S`, `Effect`, `Res` | `machine.test.ts`, `test/golden/` |
 | `apps/gateway/src/ussd/perform.ts` | Runs effects by calling the services | `createPerform` | `perform.test.ts`, `wallet.itest.ts` |
 | `apps/gateway/src/http.ts` | Fastify routes | `buildHttp` | `http.test.ts`, `wallet.itest.ts` |
 | `apps/gateway/src/app.ts` | Wires everything from injected parts | `buildApp`, `App` | all, through `test/helpers.ts` |
-| `apps/gateway/src/main.ts` | Boot: migrate, connect, recover, listen, timers | | started by hand once (section 3) |
+| `apps/gateway/src/boot.ts` | Connects everything and returns an `App`. Opens no port | `boot` | every start of the `app` service |
+| `apps/gateway/src/main.ts` | The server: boot, recover, seed if asked, listen, timers, clean stop | | `docker compose up`, `docker compose stop app` (timed in the build log) |
+| `apps/gateway/src/demo.ts` | Demo mode only: `/sim/*` routes, the top-up, the seed | `mountDemo`, `fundAccount`, `seedDemo`, `regtestWorld`, `DEMO_PEOPLE`, `DEMO_PIN`, `FUND_CAP_FCFA` | `demo.test.ts`, `demo.itest.ts` |
+| `apps/gateway/src/static.ts` | The built pages, served from memory | `loadStatic`, `mountStatic` | `demo.test.ts` |
+| `apps/simulator` | Landing page (`index.html`) and simulator (`demo.html`). `src/copy.ts` words, `src/lang.ts` language switch, `src/api.ts` the five calls, `src/phone.ts` one phone, `src/demo.ts` the guide, the inboxes and the books, `src/landing.ts`, four CSS files | built into `dist/` by `npm run build:web` | `test/copy.test.ts`, `e2e/demo.spec.ts` |
+| `e2e/`, `playwright.config.ts` | Browser tests against the running stack | | `npm run test:e2e` |
 | `infra/` | `compose.yml` (gateway side), `compose.mint.yml` (mint side), `compose.regtest.yml` (test chain), `regtest-init/init.ts` | | `scripts/smoke.ts` |
-| `scripts/` | `smoke.ts`, `dev-creds.sh`, `build-web.mjs`, `mutate.mjs`, `probe/` | | |
+| `scripts/` | `smoke.ts`, `dev-creds.sh`, `build-web.mjs`, `mutate.mjs`, `demo-seed.ts`, `stills.mjs`, `probe/` (`balances.ts` shows what each node can send) | | |
 | `eslint.config.js`, `.github/workflows/ci.yml` | Lint rules. Type check, lint and unit tests on every push | | |
 | `docs/threat-model.md` | Each threat, its control, and the test that shows it | | |
 
 ## 6. Running it
 
 ```
-docker compose up -d            # chain, three LND nodes, mint, Postgres, relay. Ready in about 2 minutes
+docker compose up -d --wait     # chain, three LND nodes, mint, Postgres, relay, and the gateway on http://localhost:8787. About 2 minutes
 bash scripts/dev-creds.sh       # copies the regtest nodes' certificates and macaroons into .keys/ (git-ignored)
 node scripts/smoke.ts           # mint, swap and melt with real payments
 npm test                        # unit tests, no stack needed
 npm run test:int                # integration tests, need the stack and .keys/
-npx tsc -p tsconfig.json --noEmit
+npm run typecheck               # server code, browser code and browser tests, each with its own config
 npm run lint
-node scripts/mutate.mjs         # breaks nine guarded lines one at a time; each must make a test fail
+npm run test:e2e                # browser tests against the app container (first time: npx playwright install chromium)
+node scripts/stills.mjs         # stills of both pages into stills/, to look at
+node scripts/mutate.mjs         # breaks fifteen guarded lines one at a time; each must make a test fail
+docker compose up -d --build --wait app   # after changing the gateway or the pages, before the browser tests
 docker compose stop             # keeps the volumes
 ```
 
@@ -328,7 +397,7 @@ Every variable is listed with its rule in `apps/gateway/src/config.ts`. The ones
 `AT_ALLOW_IPS`, `USSD_HTTP_SECRET`, `SMS_ADAPTER` with its keys, `ASG_SIGNING_KEY`, `HTTPSMS_SIGNING_KEY`.
 On Windows, stop the server with Task Manager or `taskkill`: a signal sent from Git Bash does not reach it.
 
-Host ports, all on 127.0.0.1: mint 3338, Postgres 54329, LND REST gateway 18081, world 18082, mint node 18083, relay 7447, bitcoind RPC 18443.
+Host ports, all on 127.0.0.1: gateway and pages 8787, mint 3338, Postgres 54329, LND REST gateway 18081, world 18082, mint node 18083, relay 7447, bitcoind RPC 18443.
 
 Long campaigns: `PROPERTY_RUNS=10000 npx vitest run packages/ledger -t invariants` and
 `VAULT_SENDS=1000 npx vitest run --config vitest.int.config.ts packages/vault -t "random sends"`.
@@ -345,9 +414,7 @@ The build machine's Docker has 3.1 GB of RAM and 2 CPUs. Keep the stack under ab
 
 Each gets a full "next phase in detail" section, like section 3, written when the phase before it ends.
 
-**Phase 5, something to look at.** Vite front ends in `apps/simulator` (feature-phone skin, keypad, SMS inbox, two phones side by side, a panel that shows what just happened in the ledger and at the mint) and a landing page at `/` whose main button opens `/demo`. An `app` service in `compose.yaml` that depends on `regtest-init` being healthy. `scripts/demo-seed.ts`: a market in Dakar with 6 users, 3 merchants, 2 agents. Done when a clean `docker compose up` gives a working wallet in the simulator in under 5 minutes, checked with Playwright and by looking at stills.
-
-**Phase 6, agents.** `apps/escrow`: cash-in (the agent's wallet pays a hold invoice, the user sends francs outside Melax, the agent confirms, the engine settles and mints to the user) and cash-out (the user's sats are locked, the agent sends francs, the user confirms with PIN, the vault melts to the agent's wallet). 45 minute window, 3 hour hard cap, bonds held under `bond:<id>`, disputes decided by an arbiter as a signed ledger event. Agent desk in USSD and a small agent web page. Done when both flows pass on regtest and on the NWC sandbox, a timeout refunds exact balances, and confirm-versus-cancel races leave the books consistent. Rule 15 above is the trap.
+**Phase 6, agents.** Now section 3.
 
 **Phase 7, vouchers and merchants.** Voucher = `vault.transfer` to `voucher:<id>` with a P2PK lock to the key derived from the code (`voucherKey`), locktime 30 days, refund key per voucher. Redeem by USSD, by SMS `BON <code>`, and on `apps/voucher-web` where the browser derives the key and swaps at the mint. Sweepers for refunds and for vouchers redeemed elsewhere (`writeOffSpent`). Sending to a number that has no account becomes an SMS voucher. Merchant code, poster with QR and dial string, receipts to both sides, evening summary. Offline acceptance capped at 2,000 FCFA.
 
@@ -393,6 +460,12 @@ Each gets a full "next phase in detail" section, like section 3, written when th
 | An SMS from an unknown number gets "dial to open an account" | It gets no answer | Otherwise a forged sender makes the server text any phone |
 | `sms_outbox` without retry columns | `attempts` and `next_at` added | A phone gateway that is off for a minute must not lose receipts |
 | Gateway files as listed in the phase 4 brief | Three more: `rules.ts`, `settle.ts`, `smsin.ts` | Shared name rules, one owner for the vault's settle hook, inbound SMS kept apart from the routes |
+| The demo seed has 6 users, 3 merchants, 2 agents | 6 users. Agents join in phase 6, merchants in phase 7 | A seeded agent or merchant that cannot do anything would be a prop |
+| The simulator shows two phones side by side | Side by side on a wide screen, one at a time with a switch on a small one | It has to work with one thumb at 360 px |
+| `scripts/demo-seed.ts` holds the seed | The seed is `seedDemo` in `apps/gateway/src/demo.ts`. The script calls it | The server runs the same code on an empty database |
+| `apps/escrow` as its own app | A module inside the gateway (phase 6) | One process until sessions and the send queue move to the database |
+| Both agent flows pass on the NWC sandbox | The Lightning leg of the escrow is tested on the sandbox, the whole flow on regtest | A sandbox wallet cannot pay the regtest mint |
+| Disputes are decided within 24 hours while the payment stays locked | A cash-in dispute outlives its Lightning payment: the invoice is cancelled at the 3 hour cap and a decision for the user is paid from the agent's bond | A Lightning payment cannot be held for a day |
 
 The design the build follows is below, kept from the first plan and corrected where the table above says so.
 

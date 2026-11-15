@@ -1,14 +1,14 @@
 # Architecture
 
 What each part is, why it is there, and how a sat moves through real functions. Updated at the end of every phase.
-This describes what exists after phase 4. Parts that are only planned are in `docs/PLAN.md`.
+This describes what exists after phase 5. Parts that are only planned are in `docs/PLAN.md`.
 
 ## The shape
 
 ```
  feature phone --USSD--> aggregator ---+
  feature phone --SMS---> phone gateway +--> gateway (apps/gateway) --> ledger + vault (Postgres)
- web simulator (phase 5) --------------+             |
+ web simulator (/demo) ----------------+             |
                                                      +--> mint client --> Nutshell mint --> its own LND node
  someone's Lightning wallet <--> gateway's LND node <-+
 ```
@@ -35,6 +35,7 @@ On regtest a third file (`infra/compose.regtest.yml`) adds the test chain and a 
 | `packages/ussd` | Screens that cannot exceed 160 GSM-7 characters, pure menu machines, the session runtime, aggregator adapters | core, sms |
 | `packages/i18n` | Every user-facing string in three languages | core, sms |
 | `apps/gateway` | The service a phone talks to. Its parts are below | all of the above |
+| `apps/simulator` | The landing page and the web phone simulator. Browser code: plain TypeScript and CSS, built by Vite into `dist/`, served by the gateway in demo mode. Talks to the gateway over five HTTP calls and holds no logic of the wallet | nothing at run time. `src/copy.ts` is checked against `packages/i18n` by a test |
 
 Inside `apps/gateway/src`:
 
@@ -44,7 +45,7 @@ Inside `apps/gateway/src`:
 | `schema.ts` | The gateway's tables. Append-only migrations |
 | `users.ts` | Who a number is. The one place a secret code is compared, counted and locked |
 | `rates.ts` | FCFA per bitcoin: a live source, the euro peg as fallback, a cache, and no invented value |
-| `wallet.ts` | Balance, recipient lookup, quote, send, history, limits. Moves money through the vault only |
+| `wallet.ts` | Balance, recipient lookup, quote, send, deposit, history, limits. Moves money through the vault only. A deposit is credited only for an invoice the gateway's own node reports as settled |
 | `settle.ts` | Owns the vault's single settle hook and routes it to the flow that started the operation |
 | `smsout.ts` | SMS queued inside the transaction they report, sealed at rest, sent by a timer, retried |
 | `smsin.ts` | Inbound SMS commands. None moves money. Strangers get no reply |
@@ -52,7 +53,10 @@ Inside `apps/gateway/src`:
 | `ussd/perform.ts` | Runs each effect by calling a service. The caller is always the session's own number |
 | `http.ts` | The routes aggregators and phone gateways call. Each one mounts only when its secret is set |
 | `app.ts` | Builds all of the above from injected parts, so tests can swap the database, clock, SMS adapter and log |
-| `main.ts` | Boot: migrate, connect, finish what a previous run left open, listen, start two timers |
+| `boot.ts` | Connects the database, the mint, the Lightning node, the SMS adapter and, in a regtest demo, the node that pays top-ups. Opens no port, so a script can use it |
+| `main.ts` | The server: boot, finish what a previous run left open, seed the demo if asked, listen, start two timers, stop cleanly on a signal |
+| `demo.ts` | Demo mode only: what the simulator reads, the top-up, the seed. Shows first names, never an id, a number or ecash |
+| `static.ts` | The built pages, read once into memory. No request path reaches the disk |
 
 ## The data that flows
 
@@ -68,12 +72,12 @@ Inside `apps/gateway/src`:
 
 ## Walkthrough 1: sats arrive and become a user's ecash
 
-1. A payment settles on the gateway's node. The caller posts `ext:lightning -> float:node` with `post()`. (Today a test helper does this: `fund()` in `apps/gateway/test/wallet.itest.ts`. Phase 5 adds a demo route for it and phase 8 does it from the invoice listener.)
+1. A payment settles on the gateway's node. `Wallet.deposit({ userId, paymentHash })` asks that node with `lookupInvoice()`. Only a settled invoice goes further, and the amount is the one the node reports. It posts `ext:lightning -> float:node` with `post()` under the key `recv:<hash>`. (Today the demo's top-up calls this. Phase 8 calls it from the invoice listener.)
 2. `Vault.mintFor()` asks the mint for a quote (`MintClient.mintQuote`), checks the invoice amount with `decodeInvoice`, and builds the outputs (`MintClient.planMint`).
 3. In one transaction it posts `float:node -> float:minting` and inserts the `ops` row with the sealed plan (`insertOp`).
 4. `driveMint()` checks `ln.lookupPayment(hash)` first, so a payment is never sent twice, then `ln.pay()`.
 5. `MintClient.recoverMint()` reports `not_run`, `runMint()` gets the signatures, `finish()` unblinds them and verifies each DLEQ proof.
-6. In one transaction: `addProofs()` seals each proof under the owner's key, `post()` moves `float:minting -> user:<id>:spendable`, the op is marked done, and the `onSettled` hook runs.
+6. In one transaction: `addProofs()` seals each proof under the owner's key, `post()` moves `float:minting -> user:<id>:spendable`, the op is marked done, and the `onSettled` hook runs. For a deposit the hook is `Wallet.onDepositSettled()`: one `txlog` row of kind `deposit` and the SMS `sms.ln_received`.
 
 If the process dies after step 4, `Vault.recover()` calls `driveMint()` again: the node says the payment succeeded, the mint says the quote is issued, and `recoverMint()` rebuilds the same proofs from the stored plan through the mint's restore endpoint.
 
@@ -119,6 +123,20 @@ Awa dials `#2580#`, picks Envoyer, types Moussa's number and 500, confirms, type
 If the mint does not answer in step 6, `vault.transfer()` returns `pending`, the screen says an SMS will follow,
 and the money stays locked. The other timer calls `Vault.recover()`. When it finds out what happened, step 7 runs
 then: either the two receipts, or one SMS to Awa saying the payment did not go through.
+
+## Walkthrough 5: a visitor on the demo page
+
+Someone opens `http://localhost:8787/demo` on a phone.
+
+1. `static.ts` answers `/demo` from its map with `demo.html`, already holding its English sentences (written in at build time by the `melax-fill-copy` step in `apps/simulator/vite.config.ts`). `src/demo.ts` in the browser calls `GET /sim/people` and draws two phones with `createPhone()` (`src/phone.ts`).
+2. The visitor's phone gets a random Senegalese mobile number, kept in the browser's storage. The second phone is Moussa, one of the six seeded people.
+3. The green key posts `{ sessionId, phone, dial: "#2580#" }` to `/ussd/sim`. From there it is walkthrough 4: the same runtime, machine and services a real aggregator would reach. The phone shows the text that comes back and nothing else.
+4. Every 1.5 seconds the page reads `GET /sim/sms` for both numbers and `GET /sim/state`. `progress()` in `src/demo.ts` works out the step from the SMS kinds: `welcome` means the account exists, `deposit` means money arrived, `sent` means the payment went through, `received` on the other number means it landed.
+5. "Add 5 000 F" posts to `/sim/fund`. `fundAccount()` in `apps/gateway/src/demo.ts` makes an invoice on the gateway's node, has the world node pay it, and calls `Wallet.deposit()`: walkthrough 1 from the top.
+6. `/sim/state` reads the last 20 journal entries and their postings, swaps each user id for a first name with `publicAccount()`, adds the totals from `Vault.auditAll()` and returns them. The page draws them as "what just happened".
+
+When the stack starts with `DEMO_SEED=1` on an empty database, `seedDemo()` runs steps 5 and walkthrough 4's send
+for six people before the port opens, so the first visitor already has someone to pay.
 
 ## Why it is built this way
 

@@ -1,7 +1,7 @@
 # Threat model
 
 What can go wrong, what stands in the way, and which test shows it. Updated at the end of every phase.
-State: after phase 4.
+State: after phase 5.
 
 A row says "covered" only when a test that proves the control exists and passes. Everything else names the
 phase that builds it. Test names are quoted so they can be searched for.
@@ -59,3 +59,22 @@ Test files:
 | Anyone can use any number on the web simulator route | The route exists only with `MELAX_DEMO=1`. Outside demo mode the server refuses to start with the in-memory SMS adapter | Covered | `http`: "does not exist outside demo mode". `config`: "outside demo mode an SMS has to leave for real" |
 | An oversized or malformed request | 16 KB body limit. Errors answer one word | Covered | `http`: "refuses a body over 16 KB", "a malformed request gets a short word back, not a stack or an echo" |
 | A step that runs past its time budget ends the session with "you will get an SMS", then is refused for a reason that sends no SMS | Only a send that is still running gets that message. A send that runs long and is then refused by a limit is still possible | Open, narrow | Phase 12 |
+
+## Threats found while building phase 5
+
+New test files: `demo`: `apps/gateway/test/demo.test.ts` (unit). `demo-int`: `apps/gateway/test/demo.itest.ts` (real mint and Lightning nodes). `e2e`: `e2e/demo.spec.ts` (a browser against the running stack).
+
+| Threat | Control | State | Test or phase |
+|---|---|---|---|
+| A deposit credited for a payment that never arrived, or for more than arrived | `Wallet.deposit` asks the gateway's own node. Only a settled invoice counts, and the amount is the node's | Covered | `demo`: "unknown, open, held and cancelled invoices credit nothing", "a user that does not exist, or a hash that is not one, is refused before the node is asked". `demo-int`: "an invoice nobody paid credits nothing, on the real node" |
+| One payment credited twice, or to two people | The payment hash is the key of the ledger entry and of the vault operation | Covered | `demo-int`: "is credited once per payment, to one user, however often it is asked for", "the mint's reply is lost while it issues the ecash: recovery credits once" |
+| The demo's top-up button reaching a real network | The node that pays top-ups is handed over only when it and the gateway's node both report regtest. Its settings are refused outside demo mode | Covered | `demo`: "the gateway's node, or the world node, on any other network: no top-up". `config`: "the regtest top-up node needs all three of its settings, and exists in demo mode only" |
+| The demo routes or pages left on in production | All of them mount behind the one demo flag | Covered | `demo`: "none of the demo routes or pages exist" |
+| The page that shows the books leaks a number, an id or ecash | It returns first names in place of ids, twelve characters of each hash, and totals | Covered | `demo`: "shows the last ledger entries with first names, the totals, the mint and the rate, and nothing private". `demo-int`: the seed test searches the page for every proof secret, user id and number |
+| Reading files off the server through the page routes | Pages are served from a map filled at start. No request path reaches the disk | Covered | `demo`: "answers 404 for anything that is not a file it loaded: dots, encoded dots, absolute paths, hidden files" |
+| A script slipped into a page through a name or an SMS text | The pages only write text, never markup. The server sends a policy that allows scripts and styles from itself only. Names are letters only | The policy header is tested. No test feeds markup through a name, because the name rule refuses it first | `demo`: "serves the landing page at / and the simulator at /demo, with headers that keep scripts to our own". `users`: the name rule |
+| Anyone who can reach a hosted demo holds any phone, reads any number's SMS and tops up any account | By design on a laptop. One top-up is capped at 25,000 F | Open for a hosted demo: no rate limit, and repeated top-ups can use up the channels or the mint's cap | `demo`: "refuses an amount above the cap, below the floor, or that is not a whole number". Rate limit: phase 13 |
+| The demo secret in `compose.yaml` opens the demo database | It is marked as a demo value. A real deployment sets its own | Accepted. The data is test money and made-up numbers | None |
+| A visitor types a code they use elsewhere into a web page | The page says not to, on every screen, in three languages | Accepted | `e2e` reads the warning as part of the page weight test |
+| A deposit whose payment to the mint fails for good | Logged as an error. The sats stay on the gateway's node and belong to nobody in the books | Open. Harmless on regtest, not acceptable with real invoices | Phase 8 |
+| The guide says a step is done when it is not | Steps are ticked from the SMS outbox, never from a click | Covered | `e2e`: "a new visitor opens an account, adds money, sends 500 F, and each step unlocks only when the one before really happened" |

@@ -1,6 +1,6 @@
 # Melax litepaper
 
-Draft of 15 Nov 2026, updated after phase 4 (the wallet menus). Melax is Wolof for lightning.
+Draft of 15 Nov 2026, updated after phase 5 (the phone simulator). Melax is Wolof for lightning.
 
 ## What it is
 
@@ -50,13 +50,15 @@ Built and tested as of this draft:
 - The exercise book. I ran 10,000 random sequences of operations against it and the totals always came back to zero.
 - The drawer and the note handling: deposits, transfers, vouchers locked to a code, pay-outs, and recovery after a crash. 36 tests against the real mint, then 1,000 random sends. The long run and the crash tests end by asking the mint whether every note I believe I hold is still unspent. It was.
 - Secret code hashing and lockout, spending limits, SMS handling, the menu engine, and every screen in French, Wolof and English.
-- The wallet itself, through the menus: open an account, read a balance, send to another number, see how to receive, read the history, change the code, the language or the address name. 143 tests without a network, 15 more with real ecash. I started the server once on the test network and walked the menus over HTTP.
+- The wallet itself, through the menus: open an account, read a balance, send to another number, see how to receive, read the history, change the code, the language or the address name. 143 tests without a network, 15 more with real ecash.
+- Something you can click. One command starts everything, and a web page shows two phones with buttons. They dial the real server. A guide walks you through four steps: open an account, add test money, send 500 F, look at the other phone. A browser test does the same walk on a 360 pixel screen.
 
-Designed and not built yet: the phone simulator you can click on, the agent cash-in and cash-out, vouchers and
+Designed and not built yet: the agent cash-in and cash-out, vouchers and
 shops, Lightning addresses that can be paid, the public reserve check, the voice line. The order is in `docs/PLAN.md`.
 
-One gap matters more than the rest today. Money can only get into an account through a helper in the tests. The
-menus move real ecash between accounts, but the door in from outside comes with the next phases.
+One gap matters more than the rest today. The only door in from outside is the top-up button of the demo, and
+it only exists on the test network. A real person still has no way to put francs or sats into an account. That
+comes with the agents and with Lightning addresses.
 
 I would rather show less and have every part of it be real.
 
@@ -279,10 +281,36 @@ I wrote the menu tests before the menus. When the code was done they all passed 
 good and proves little: a test that has never failed has not shown it can.
 
 So I broke the code on purpose, one line at a time. Let the dial string reach the code prompt. Let a session
-resume at the code prompt. Skip the lock. Skip the code on a send. Nine of these, each followed by the tests.
-All nine were caught, and the script that does it is in the repository (`scripts/mutate.mjs`).
+resume at the code prompt. Skip the lock. Skip the code on a send. Nine of these after the menus, six more after
+the simulator, each followed by the tests. All fifteen were caught, and the script that does it is in the repository (`scripts/mutate.mjs`).
 
-Cost: nine lines is a sample. It is not a proof that every line is guarded.
+Cost: fifteen lines is a sample. It is not a proof that every line is guarded.
+
+### 21. Where the demo's money comes from
+
+A demo needs accounts with money in them. The quick way is one line that writes a balance into the database.
+
+I did not want a number in the demo that the real system could not have produced. So the top-up button makes a
+real payment on the test network. A node that plays "a relative abroad" pays the gateway's node, the gateway asks
+its own node whether the payment really settled and for how much, and only then buys ecash for the account. The
+six people at the market who are already there when you arrive got their money the same way.
+
+It is the same door a Lightning address will use later. It asks the node. It does not believe the caller.
+
+Cost: the demo needs that second node's keys, so it only works on the test network, and the server checks that
+before it offers the button. Money only flows one way until cash-out exists, so the test network has to open a
+new channel now and then. I found that out when the seed stopped working after a day of tests.
+
+### 22. How the guide knows you did the step
+
+The demo page has four steps. A guide could tick a step when you press "next".
+
+Mine ticks a step when the server's own SMS outbox shows it happened. The welcome SMS means the account exists.
+The deposit SMS means the money arrived. The next step stays shut until then. You cannot click your way past a
+step you did not do, and what the page says is always what the wallet did.
+
+Cost: the page asks the server every second and a half, and the guide now depends on the names the server gives
+its SMS. Change one and the guide stops ticking. A browser test catches that.
 
 ## What I do not claim
 
@@ -290,8 +318,10 @@ Cost: nine lines is a sample. It is not a proof that every line is guarded.
 - No SMS has gone through a physical phone. The adapters are tested against the documented formats.
 - No short code is live. The server speaks the protocol aggregators use, which proves the software and not the contract.
 - This is not legal to run with real money in Senegal today without advice.
-- Nobody can pay into an account from outside yet, and the address shown on the screens cannot be paid yet.
-- The server has been started by hand on my machine. It is not deployed anywhere, and its clean shutdown has never run.
+- Nobody can pay into an account from outside yet, except through the demo's top-up button on the test network. The address shown on the screens cannot be paid yet.
+- It is not deployed anywhere. It runs on my machine, in Docker, from one command.
+- The demo pages have no login. Anyone who can reach them can hold any phone. That is what a demo is for, and it is why the server refuses to carry them outside demo mode.
+- The Wolof on the web pages is mine too, and just as unread as the Wolof in the menus.
 - It has to run as a single process for now.
 - Anyone can type numbers into the send screen and learn which ones have an account and the owner's first name. Showing the name is the point of that screen. Limiting how often is not built.
 
