@@ -428,7 +428,17 @@ Each gets a full "next phase in detail" section, like section 3, written when th
 
 **Phase 12, hardening.** Playwright suite through the simulator for every flow. Chaos tests: dropped sessions, lost Lightning replies, mint down. Every row of the threat model has a passing test. A test proves no personal data reaches the logs. A reviewer with no build context audits the money paths; findings land with tests. CI runs the integration job.
 
-**Phase 13, delivery.** Hosted demo (Caddy, backups, runbook), README with the architecture diagram, constraints, metrics and next iteration, the 3 minute pitch script, Devpost text, logo.
+**Phase 13, delivery.** Hosted demo on Railway (the owner's choice, 15 Nov 2026. Not Vercel, not a plain server), with a runbook. README with the architecture diagram, constraints, metrics and next iteration, the 3 minute pitch script, Devpost text, logo.
+
+What Railway changes, read from its docs on 15 Nov 2026 (`docs.railway.com/guides/docker-compose`, `/reference/volumes`, `/networking/private-networking`). Check each again when the phase starts:
+
+- Railway does not import a compose file. Each of our nine containers becomes its own Railway service.
+- A service has one volume, and the docs describe no way for two services to mount the same one. Our stack shares volumes in three places: `regtest-init` reads all three nodes' volumes, the mint reads its node's volume for the certificate and the macaroon, and the gateway reads `demo-keys`. Each of these needs another way to hand over credentials, or the test network has to run inside one service for the hosted demo. Pick one, test it, and write down what it costs. Running everything in one service would put both trust domains on one machine: say so on the page if that is the choice.
+- There is no `depends_on`. `main.ts` and `regtest-init` must wait and retry on their own. `regtest-init` already does. The gateway does not: today it exits if the mint or the node is not up.
+- Services reach each other at `<service>.railway.internal` over plain HTTP. LND's certificate must carry that name (`--tlsextradomain`), and the gateway must listen on IPv6 as well as IPv4 (`HOST=::`).
+- An image that runs as a non-root user can be refused by its volume. Railway's fix is `RAILWAY_RUN_UID=0`.
+- Volumes are 5 GB on the Hobby plan, 0.5 GB on a trial.
+- Before anything public: the rate limit on the demo routes (gap 1 in section 3).
 
 **Phase 14, voice.** Asterisk container, ARI app, keypad flows for amounts and PIN, recorded prompts, browser softphone. Wolof and French speech recognition for menu words only, with an accuracy report on recorded phrases.
 
@@ -436,7 +446,7 @@ Each gets a full "next phase in detail" section, like section 3, written when th
 
 ## 8. What only the owner can supply
 
-- A server (2 vCPU, 4 GB) and a domain for the hosted demo.
+- A Railway project for the hosted demo, and a domain if wanted. The deploy itself is the owner's step, or needs his go each time.
 - An Android phone with a SIM, for one real SMS round trip.
 - An Anthropic API key if the scam checker's model step is to be tried live. The checker works without it.
 - A native Wolof speaker to read the strings and, later, record the voice prompts.
