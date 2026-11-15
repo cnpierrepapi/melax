@@ -45,7 +45,7 @@ Built and tested as of this draft:
 - A private test network that starts with one command: a bitcoin chain, three Lightning nodes, the mint, a database.
 - The Lightning layer, with two ways to connect. The same ten checks pass on both, including locking a payment and then releasing or refunding it.
 - The exercise book. I ran 10,000 random sequences of operations against it and the totals always came back to zero.
-- The drawer and the note handling: deposits, transfers, vouchers locked to a code, pay-outs, and recovery after a crash. 36 tests against the real mint, then 1,000 random sends. After each run I asked the mint to confirm that every note I believed I held was still unspent.
+- The drawer and the note handling: deposits, transfers, vouchers locked to a code, pay-outs, and recovery after a crash. 36 tests against the real mint, then 1,000 random sends. The long run and the crash tests end by asking the mint whether every note I believe I hold is still unspent. It was.
 - Secret code hashing and lockout, spending limits, SMS handling, the menu engine, and every screen in French, Wolof and English.
 
 Designed and not built yet: the wallet menus themselves, the phone simulator you can click on, the agent cash-in
@@ -226,7 +226,7 @@ These answers describe the design. The section above says which parts are built.
 
 *What happens if the phone is stolen?* Nothing moves without the code. Five wrong tries lock it. Limits cap what a thief could take even with the code.
 
-*How do you know the books are right?* After every test run the ledger total is compared with the notes held, and the mint is asked whether those notes are still unspent.
+*How do you know the books are right?* The vault tests end by comparing the ledger with the notes held, account by account. The long run and the crash tests also ask the mint whether those notes are still unspent.
 
 ## Words used here
 
