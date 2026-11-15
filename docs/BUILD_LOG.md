@@ -50,6 +50,16 @@ Tested against the real Nutshell mint and LND nodes on regtest, with faults inje
 - `packages/ussd`: the menu SDK and its runtime. 18 tests.
 - `packages/i18n`: every screen and SMS in French, Wolof and English. 9 tests. The Wolof has not been read by a native speaker yet.
 
+## 15 Nov 2026
+
+### Phases, handover plan, litepaper
+
+The owner asked for the build to run in numbered phases with a stop after each, for the plan to be kept current so someone else can pick the work up, and for a litepaper that explains the trade-offs.
+
+- `docs/PLAN.md` rewritten: phase board, the next phase in detail, 39 rules that keep later work from breaking earlier work, a code map, and the first plan's design as an appendix.
+- `docs/LITEPAPER.md`, `docs/DECISIONS.md` and `docs/ARCHITECTURE.md` written.
+- Measured the mint's fee reserve with `scripts/probe/fee-reserve-probe.ts`: 3 to 4 sats for 100 to 500,000 sats when the mint's node knows a route. With its channels down the mint falls back to 1 % and the vault's fee cap refuses pay-outs of 1,000 sats or more.
+
 ## Defect log
 
 | # | What happened | Cause | Fix |
@@ -70,3 +80,5 @@ Tested against the real Nutshell mint and LND nodes on regtest, with faults inje
 | 14 | The mint's rate limit would have throttled the gateway | Limits are per client address, and every user reaches the mint through one gateway | Raised for the pilot mint, with a note for operators in `infra/compose.mint.yml` |
 | 15 | The regtest helper looked healthy before it had redone its checks | `/tmp/ready` survived a container restart | The helper deletes the marker when it starts |
 | 16 | Two official sources disagree on the SMS gateway's webhook field for the sender | The project README says `phoneNumber`, its docs site says `sender` | The adapter reads both. Both shapes are fixtures in the test |
+| 17 | After a night stopped, `docker compose up` never became ready. The Lightning nodes answered "RPC server is in the process of starting up" for minutes | LND treats a chain whose last block is hours old as not synced and will not finish starting. The helper that mines blocks was waiting for LND to be ready. Each waited for the other | The helper mines one block before it waits for the nodes and keeps one coming while they sync |
+| 18 | With defect 17 fixed, the gateway to mint channel stayed inactive, and the mint asked a 1 % fee reserve on every quote | After the restart the nodes did not reconnect. The helper only connected peers when it opened a channel. With no route known, the mint falls back to its percentage reserve | The helper connects the peers by host name on every run. Ready one second after the nodes are up |

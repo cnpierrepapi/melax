@@ -70,12 +70,19 @@ async function main(): Promise<void> {
     await mine(101 - height, minerAddr);
   }
 
+  // LND treats a chain whose last block is hours old as "not synced" and will not finish starting.
+  // After the stack has been stopped for a while that is every node, so mine a fresh block before
+  // waiting for them, and keep one coming while they catch up. (Defect 17 in docs/BUILD_LOG.md.)
+  await mine(1, minerAddr);
+
   const names = ["world", "gw", "mint"] as const;
   const lnd = Object.fromEntries(names.map((n) => [n, null as unknown as LndBackend])) as Record<(typeof names)[number], LndBackend>;
   const info = {} as Record<(typeof names)[number], Info>;
   for (const n of names) {
     lnd[n] = await until(`lnd-${n} credentials`, async () => node(n));
+    let tries = 0;
     info[n] = await until(`lnd-${n} to sync`, async () => {
+      if (++tries % 10 === 0) await mine(1, minerAddr);
       const i = await lnd[n].request<Info>("GET", "/v1/getinfo");
       return i.synced_to_chain ? i : false;
     });
@@ -116,10 +123,15 @@ async function main(): Promise<void> {
     const existing = await lnd[a].request<{ channels?: Chan[] }>("GET", "/v1/channels");
     const pending = await lnd[a].request<{ pending_open_channels?: Array<{ channel: { remote_node_pub: string } }> }>("GET", "/v1/channels/pending");
     const has = (existing.channels ?? []).some((c) => c.remote_pubkey === info[b].identity_pubkey) || (pending.pending_open_channels ?? []).some((c) => c.channel.remote_node_pub === info[b].identity_pubkey);
+    // Connect by host name on every run, not only when opening the channel. Docker can hand the
+    // containers new addresses after a restart, and LND remembers its peer by the old one. (Defect 18.)
+    await until(`peer ${a} -> ${b}`, async () => {
+      await lnd[a].request("POST", "/v1/peers", { addr: { pubkey: info[b].identity_pubkey, host: `lnd-${b}:9735` }, perm: true }).catch((e: Error) => {
+        if (!/already connected/i.test(e.message)) throw e;
+      });
+      return true;
+    }, 30);
     if (has) continue;
-    await lnd[a].request("POST", "/v1/peers", { addr: { pubkey: info[b].identity_pubkey, host: `lnd-${b}:9735` }, perm: true }).catch((e: Error) => {
-      if (!/already connected/i.test(e.message)) throw e;
-    });
     await until(`channel ${a} -> ${b}`, async () => {
       await lnd[a].request("POST", "/v1/channels", {
         node_pubkey: Buffer.from(info[b].identity_pubkey, "hex").toString("base64"),

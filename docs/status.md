@@ -1,12 +1,12 @@
 # Status
 
-What is real today and what is not built yet. Updated 14 Nov 2026.
+What is real today and what is not built yet. Updated 15 Nov 2026, after phase 3. The phase board is in `docs/PLAN.md`.
 
 ## Built and tested
 
 | Part | Proof |
 |---|---|
-| Regtest network: bitcoind, three LND nodes, Nutshell mint, Postgres, Nostr relay | `docker compose up`, then `node scripts/smoke.ts`: mint, swap and melt with real payments |
+| Regtest network: bitcoind, three LND nodes, Nutshell mint, Postgres, Nostr relay | `docker compose up`, then `node scripts/smoke.ts`: mint, swap and melt with real payments. Restart after a night stopped also checked |
 | Lightning backends: LND over REST, Nostr Wallet Connect | One 10-test contract suite, passing on regtest LND and on faucet.nwc.dev, hold settle and cancel included |
 | Ledger: double entry, hash chained, idempotent | 13 tests, including tampering and a random-operations run |
 | Ecash client: plan, run, recover | 15 tests against the real mint |
