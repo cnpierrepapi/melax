@@ -7,14 +7,18 @@
 //   - the history rows, the receipt number and both SMS are written by the settle handler, inside the
 //     transaction that settles the ecash. A send that is still unknown returns PENDING and its receipt
 //     follows by SMS when Vault.recover() resolves it;
-//   - an idempotency key moves money once. Asking again with the same key reports the first outcome.
-// Callers: perform.ts (USSD effects), smsin.ts (balance by SMS).
+//   - an idempotency key moves money once. Asking again with the same key reports the first outcome;
+//   - a deposit is credited only for an invoice the gateway's own node reports as settled, for the
+//     amount that node reports, once per payment hash and to one user.
+// Callers: perform.ts (USSD effects), smsin.ts (balance by SMS), demo.ts (the top-up button). Phase 8
+// calls deposit() from the invoice listener.
 import { AppError, type Clock, DAY, type Logger, fcfaToSats, isAppError, normalizePhone, satsToFcfa, silentLogger, toSafeInt } from "@melax/core";
 import { type MessageKey, fcfa as showFcfa, t } from "@melax/i18n";
-import { type Db, balance } from "@melax/ledger";
+import { type Db, balance, post } from "@melax/ledger";
+import type { LightningBackend } from "@melax/lightning";
 import { TIERS, type TierLevel, checkSpend, tierFor } from "@melax/limits";
 import { assertGsm7 } from "@melax/sms";
-import type { OpView, Vault } from "@melax/vault";
+import { FLOAT_NODE, type OpView, type Vault } from "@melax/vault";
 import type { Rates } from "./rates.ts";
 import type { SettleRouter } from "./settle.ts";
 import type { SmsOutbox } from "./smsout.ts";
@@ -35,6 +39,16 @@ interface SendMeta {
   rate: number;
 }
 
+/** What a deposit stores with its vault operation. */
+interface DepositMeta {
+  t: "deposit";
+  user: string;
+  /** FCFA per BTC when the sats arrived. The francs in the history and in the SMS come from it. */
+  rate: number;
+}
+
+export type DepositResult = { ok: true; sats: number; fcfa: number } | { ok: false; err: "NOT_FOUND" | "NOT_PAID" | "PENDING" | "GENERIC" };
+
 export type Refusal =
   | PinFailure
   | { ok: false; err: "INSUFFICIENT_FUNDS"; balanceFcfa: number }
@@ -47,6 +61,8 @@ export interface WalletDeps {
   clock: Clock;
   log?: Logger;
   vault: Vault;
+  /** The gateway's own Lightning node. Asked whether an invoice was really paid before a deposit is credited. */
+  ln: LightningBackend;
   users: Users;
   rates: Rates;
   outbox: SmsOutbox;
@@ -62,6 +78,7 @@ export class Wallet {
     this.d = deps;
     this.log = deps.log ?? silentLogger;
     deps.settle.on("send", (tx, op) => this.onSendSettled(tx, op));
+    deps.settle.on("deposit", (tx, op) => this.onDepositSettled(tx, op));
   }
 
   // ---------- reads ----------
@@ -240,6 +257,81 @@ export class Wallet {
     const got = satsToFcfa(await balance(tx, spendable(to.id)), m.rate);
     await this.text(tx, from, "sent", "sms.sent", { fcfa: showFcfa(m.fcfa), name: to.name, balance: showFcfa(left), receipt });
     await this.text(tx, to, "received", "sms.received", { fcfa: showFcfa(m.fcfa), name: from.name, balance: showFcfa(got), receipt });
+  }
+
+  // ---------- deposit ----------
+
+  /**
+   * Credit a Lightning payment that arrived on the gateway's node to a user, as ecash.
+   * The caller names the user and the payment hash, nothing else: the amount is the one the node
+   * reports, and only a settled invoice counts. Safe to call again with the same hash: the ledger
+   * entry and the vault operation both carry the hash as their key, so the credit happens once, and
+   * a second call for another user is refused (CONFLICT in the ledger).
+   * PENDING means the sats are in and the mint has not answered yet: Vault.recover() finishes it,
+   * and the history row and the SMS are written then.
+   */
+  async deposit(a: { userId: string; paymentHash: string }): Promise<DepositResult> {
+    const user = await this.d.users.byId(a.userId);
+    if (!user) return { ok: false, err: "NOT_FOUND" };
+    if (typeof a.paymentHash !== "string" || !/^[0-9a-f]{64}$/.test(a.paymentHash)) return { ok: false, err: "NOT_PAID" };
+    const inv = await this.d.ln.lookupInvoice(a.paymentHash);
+    if (!inv || inv.state !== "settled" || !Number.isSafeInteger(inv.amountSat) || inv.amountSat <= 0) return { ok: false, err: "NOT_PAID" };
+    const amountSat = inv.amountSat;
+    const rate = await this.d.rates.get();
+
+    let op: OpView;
+    try {
+      await post(this.d.db, this.d.clock, { kind: "ln.received", idemKey: `recv:${a.paymentHash}`, meta: { user: user.id }, postings: [{ account: "ext:lightning", delta: -amountSat }, { account: FLOAT_NODE, delta: amountSat }] });
+      const meta: DepositMeta = { t: "deposit", user: user.id, rate: rate.xofPerBtc };
+      op = await this.d.vault.mintFor({ idemKey: `mint:${a.paymentHash}`, owner: owner(user.id), amountSat, meta: { ...meta } });
+    } catch (e) {
+      this.log.error("wallet.deposit.failed", { user: user.id, err: e });
+      return { ok: false, err: "GENERIC" };
+    }
+    if (op.status === "pending") {
+      this.log.warn("wallet.deposit.pending", { user: user.id, op: op.id });
+      return { ok: false, err: "PENDING" };
+    }
+    // The payment hash belongs to whoever it was first credited to.
+    if (op.status === "failed" || op.owner !== owner(user.id)) return { ok: false, err: "GENERIC" };
+    const stored = op.data.meta as Partial<DepositMeta> | undefined;
+    this.log.info("wallet.deposit.done", { user: user.id, op: op.id, amountSat });
+    return { ok: true, sats: amountSat, fcfa: satsToFcfa(amountSat, stored?.rate ?? rate.xofPerBtc) };
+  }
+
+  /**
+   * Runs inside the transaction that completes or fails a deposit's mint operation (see settle.ts).
+   * Done: one history row and one SMS. Failed (our node could not pay the mint): the sats went back to
+   * float:node and belong to nobody in the books yet, so this is logged loudly and nothing is promised.
+   */
+  private async onDepositSettled(tx: Db, op: OpView): Promise<void> {
+    const m = op.data.meta as unknown as DepositMeta;
+    if (op.status === "failed") {
+      this.log.error("wallet.deposit.mint_failed", { user: m.user, op: op.id, amountSat: op.amountSat });
+      return;
+    }
+    if (op.status !== "done") return;
+    const user = await this.d.users.byId(m.user, tx);
+    if (!user) {
+      this.log.error("wallet.settle.unknown_user", { op: op.id });
+      return;
+    }
+    const got = satsToFcfa(op.amountSat, m.rate);
+    const receipt = toSafeInt((await tx.query<{ n: number }>("SELECT nextval('receipt_no') AS n"))[0]!.n);
+    await tx.query("INSERT INTO txlog (user_id, ts, kind, amount_sat, amount_fcfa, counterparty, counterparty_id, receipt_no, ref, spend) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)", [
+      user.id,
+      this.d.clock.now(),
+      "deposit",
+      op.amountSat,
+      got,
+      "Lightning",
+      null,
+      receipt,
+      op.id,
+      false,
+    ]);
+    const have = satsToFcfa(await balance(tx, spendable(user.id)), m.rate);
+    await this.text(tx, user, "deposit", "sms.ln_received", { fcfa: showFcfa(got), comment: "", balance: showFcfa(have) });
   }
 
   /**

@@ -1,7 +1,8 @@
 // The gateway's HTTP surface: where USSD aggregators and SMS phone gateways call in.
 // Contract:
 //   - every body is read as raw text, at most 16 KB: signatures are checked over the exact bytes received;
-//   - a route exists only when its secret is configured. /ussd/sim is mounted in demo mode only;
+//   - a route exists only when its secret is configured. /ussd/sim, the /sim routes of demo.ts and the
+//     web pages are mounted in demo mode only, and they are the only routes with no authentication;
 //   - Africa's Talking does not sign: its route is /ussd/at/<secret> and only allow-listed addresses may
 //     call it. A wrong secret gets the same 404 as a path that does not exist;
 //   - an error answer carries a short word, never a message, a stack or an echo of the request;
@@ -13,10 +14,12 @@ import { constantTimeEqual } from "@melax/crypto";
 import { parseAsgWebhook, parseHttpSmsWebhook } from "@melax/sms";
 import { africasTalking, genericHttp, simulator } from "@melax/ussd";
 import type { App } from "./app.ts";
+import { mountDemo } from "./demo.ts";
+import { type StaticFiles, mountStatic } from "./static.ts";
 
 const header = (v: string | string[] | undefined): string | undefined => (Array.isArray(v) ? v[0] : v);
 
-export function buildHttp(app: App): FastifyInstance {
+export function buildHttp(app: App, opts: { web?: StaticFiles } = {}): FastifyInstance {
   const { config, log, clock } = app;
   const http = Fastify({ logger: false, bodyLimit: 16 * 1024, trustProxy: config.trustProxy });
 
@@ -52,6 +55,9 @@ export function buildHttp(app: App): FastifyInstance {
       const j = JSON.parse(raw(req.body)) as { sessionId?: unknown; phone?: unknown; input?: unknown; dial?: unknown };
       return sim.handle({ sessionId: String(j.sessionId ?? ""), phone: String(j.phone ?? ""), input: String(j.input ?? ""), dial: typeof j.dial === "string" && j.dial ? j.dial : undefined });
     });
+    // What the web simulator reads, the top-up button, and the pages themselves.
+    mountDemo(http, app);
+    if (opts.web) mountStatic(http, opts.web);
   }
 
   if (config.at) {

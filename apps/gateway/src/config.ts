@@ -20,6 +20,17 @@ const Env = z.object({
   MELAX_PEPPER: z.string({ error: "is required" }).regex(/^[0-9a-fA-F]{64,}$/, "must be at least 32 random bytes written in hex"),
   /** Demo mode mounts the web simulator route and keeps SMS texts so the simulator can show them. */
   MELAX_DEMO: flag,
+  /** Demo mode only: open six accounts with balances and a little history when the database is empty. */
+  DEMO_SEED: flag,
+  /**
+   * Demo mode only, regtest only: the node that plays "everybody else". The top-up button of the web
+   * simulator pays the gateway's invoices from it. All three or none.
+   */
+  DEMO_WORLD_LND_REST_URL: optional,
+  DEMO_WORLD_LND_MACAROON_PATH: optional,
+  DEMO_WORLD_LND_TLS_CERT_PATH: optional,
+  /** Folder holding the built web pages. Unset, main.ts looks in apps/simulator/dist. */
+  WEB_DIR: optional,
   DATABASE_URL: z.string().default("postgres://melax:melax@127.0.0.1:54329/melax"),
   MINT_URL: z.string().default("http://127.0.0.1:3338"),
   LND_REST_URL: z.string().default("https://127.0.0.1:18081"),
@@ -61,6 +72,9 @@ export type SmsOut = { adapter: "memory" } | { adapter: "asg"; url: string; user
 export interface Config {
   pepper: Buffer;
   demo: boolean;
+  demoSeed: boolean;
+  demoWorld: { restUrl: string; macaroonPath: string; tlsCertPath: string } | null;
+  webDir: string | null;
   databaseUrl: string;
   mintUrl: string;
   lnd: { restUrl: string; macaroonPath: string; tlsCertPath: string };
@@ -102,11 +116,22 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
 
   const allowIps = (e.AT_ALLOW_IPS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
   if (e.AT_SECRET && !e.MELAX_DEMO && allowIps.length === 0) problems.push("AT_ALLOW_IPS is required with AT_SECRET outside demo mode: the Africa's Talking route has no signature to check");
+
+  // Everything that only makes sense in a demo is refused outside one, so a deployment cannot carry
+  // a top-up button or seeded accounts by accident.
+  const world = { DEMO_WORLD_LND_REST_URL: e.DEMO_WORLD_LND_REST_URL, DEMO_WORLD_LND_MACAROON_PATH: e.DEMO_WORLD_LND_MACAROON_PATH, DEMO_WORLD_LND_TLS_CERT_PATH: e.DEMO_WORLD_LND_TLS_CERT_PATH };
+  const worldSet = Object.entries(world).filter(([, v]) => v !== undefined);
+  if (worldSet.length > 0 && worldSet.length < 3) for (const [name, v] of Object.entries(world)) if (v === undefined) problems.push(`${name} is required when another DEMO_WORLD_LND_* variable is set`);
+  if (!e.MELAX_DEMO && worldSet.length > 0) problems.push(`${worldSet[0]![0]} is only allowed with MELAX_DEMO=1`);
+  if (!e.MELAX_DEMO && e.DEMO_SEED) problems.push("DEMO_SEED is only allowed with MELAX_DEMO=1");
   if (problems.length > 0) refuse(problems);
 
   return {
     pepper: Buffer.from(e.MELAX_PEPPER, "hex"),
     demo: e.MELAX_DEMO,
+    demoSeed: e.DEMO_SEED,
+    demoWorld: worldSet.length === 3 ? { restUrl: world.DEMO_WORLD_LND_REST_URL!, macaroonPath: world.DEMO_WORLD_LND_MACAROON_PATH!, tlsCertPath: world.DEMO_WORLD_LND_TLS_CERT_PATH! } : null,
+    webDir: e.WEB_DIR ?? null,
     databaseUrl: e.DATABASE_URL,
     mintUrl: e.MINT_URL,
     lnd: { restUrl: e.LND_REST_URL, macaroonPath: e.LND_MACAROON_PATH, tlsCertPath: e.LND_TLS_CERT_PATH },

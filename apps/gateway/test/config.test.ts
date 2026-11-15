@@ -53,6 +53,20 @@ describe("configuration", () => {
     expect(() => loadConfig({ MELAX_PEPPER: "" })).toThrow(/MELAX_PEPPER/);
   });
 
+  it("the regtest top-up node needs all three of its settings, and exists in demo mode only", () => {
+    const world = { DEMO_WORLD_LND_REST_URL: "https://lnd-world:8080", DEMO_WORLD_LND_MACAROON_PATH: "/keys/lnd-world/admin.macaroon", DEMO_WORLD_LND_TLS_CERT_PATH: "/keys/lnd-world/tls.cert" };
+    expect(loadConfig(base)).toMatchObject({ demoWorld: null, demoSeed: false, webDir: null });
+    expect(loadConfig({ ...base, ...world, DEMO_SEED: "1", WEB_DIR: "/app/apps/simulator/dist" })).toMatchObject({
+      demoWorld: { restUrl: "https://lnd-world:8080", macaroonPath: "/keys/lnd-world/admin.macaroon", tlsCertPath: "/keys/lnd-world/tls.cert" },
+      demoSeed: true,
+      webDir: "/app/apps/simulator/dist",
+    });
+    expect(() => loadConfig({ ...base, DEMO_WORLD_LND_REST_URL: world.DEMO_WORLD_LND_REST_URL })).toThrow(/DEMO_WORLD_LND_MACAROON_PATH/);
+    const live = { MELAX_PEPPER: PEPPER, SMS_ADAPTER: "asg", ASG_URL: "http://x", ASG_USER: "u", ASG_PASSWORD: "p" };
+    expect(() => loadConfig({ ...live, ...world })).toThrow(/DEMO_WORLD_LND_REST_URL is only allowed with MELAX_DEMO=1/);
+    expect(() => loadConfig({ ...live, DEMO_SEED: "1" })).toThrow(/DEMO_SEED is only allowed with MELAX_DEMO=1/);
+  });
+
   it("refuses values that would break a screen or the books", () => {
     expect(() => loadConfig({ ...base, USSD_CODE: "2580" })).toThrow(/USSD_CODE/);
     expect(() => loadConfig({ ...base, ADDRESS_DOMAIN: "melax sn" })).toThrow(/ADDRESS_DOMAIN/);

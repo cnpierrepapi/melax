@@ -1,16 +1,23 @@
 // One-shot setup for the local regtest network, then a slow block miner.
 // It funds the three LND nodes, opens world <-> gateway <-> mint channels with liquidity on both
 // sides, writes /tmp/ready, and keeps mining a block every 30 s so confirmations keep arriving.
+// On every round it also checks that world can still send and the mint's node can still receive,
+// and opens one more channel when either runs low.
 // Regtest only: this is the one process that can see all three nodes' credentials. It does not exist
-// on a public network, where channels are opened by each operator on their own.
+// on a public network, where channels are opened by each operator on their own. It also hands the
+// demo gateway a readable copy of two of them (its own node and the world node), never the mint's.
 // Run by: the `regtest-init` service in compose.yaml. Safe to restart: every step checks before acting.
-import { rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { LndBackend } from "@melax/lightning";
 
 const RPC = process.env.BITCOIND_RPC ?? "http://bitcoind:18443";
 const RPC_AUTH = "Basic " + Buffer.from(`${process.env.BITCOIND_USER ?? "melax"}:${process.env.BITCOIND_PASS ?? "melax"}`).toString("base64");
+/** Where the demo gateway's copies of the node credentials go. The folder exists only when compose mounts it. */
+const KEYS_DIR = process.env.DEMO_KEYS_DIR ?? "/keys";
 const CHANNEL_SAT = 5_000_000;
 const PUSH_SAT = 2_500_000;
+/** Below this, a node that should be able to send gets one more channel. */
+const LOW_SAT = 1_000_000;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const log = (...a: unknown[]) => console.log(new Date().toISOString(), "[regtest-init]", ...a);
 
@@ -89,6 +96,22 @@ async function main(): Promise<void> {
     log(`lnd-${n} is up`, info[n].identity_pubkey.slice(0, 16));
   }
 
+  // The demo gateway runs as an unprivileged user and cannot read the nodes' volumes, which belong to
+  // root. Copy what it needs, and only that, into the volume it mounts read-only: its own node's
+  // certificate and macaroon, and those of the world node that pays top-ups. The mint node's
+  // credentials are not copied: the gateway has no business there.
+  if (existsSync(KEYS_DIR)) {
+    for (const n of ["gw", "world"] as const) {
+      const dir = `${KEYS_DIR}/lnd-${n}`;
+      mkdirSync(dir, { recursive: true, mode: 0o755 });
+      for (const [from, to] of [[`/lnd/${n}/tls.cert`, "tls.cert"], [`/lnd/${n}/data/chain/bitcoin/regtest/admin.macaroon`, "admin.macaroon"]] as const) {
+        copyFileSync(from, `${dir}/${to}`);
+        chmodSync(`${dir}/${to}`, 0o444);
+      }
+    }
+    log("copied the gateway's and the world node's credentials for the demo gateway");
+  }
+
   // Fund each node's on-chain wallet once.
   let funded = false;
   for (const n of names) {
@@ -161,6 +184,50 @@ async function main(): Promise<void> {
     return g.num_channels >= 2;
   }, 90);
 
+  // Money on this network only flows one way until cash-out exists: world -> gateway -> mint. Every
+  // top-up and every test deposit uses up a little of what world can send and of what the mint's node
+  // can receive. When either runs low, the sender opens one more channel. The mint's node is never
+  // paid back out: those sats back the ecash it issued. (Defect 29 in docs/BUILD_LOG.md.)
+  async function addLiquidity(): Promise<boolean> {
+    let opened = false;
+    for (const [a, b] of links) {
+      const chans = (await lnd[a].request<{ channels?: Chan[] }>("GET", "/v1/channels")).channels ?? [];
+      const canSend = chans.filter((c) => c.remote_pubkey === info[b].identity_pubkey).reduce((s, c) => s + Number(c.local_balance), 0);
+      if (canSend >= LOW_SAT) continue;
+      const pending = await lnd[a].request<{ pending_open_channels?: Array<{ channel: { remote_node_pub: string } }> }>("GET", "/v1/channels/pending");
+      if ((pending.pending_open_channels ?? []).some((c) => c.channel.remote_node_pub === info[b].identity_pubkey)) continue;
+      const onChain = await lnd[a].request<{ confirmed_balance: string }>("GET", "/v1/balance/blockchain");
+      if (Number(onChain.confirmed_balance) < CHANNEL_SAT + 100_000) {
+        const { address } = await lnd[a].request<{ address: string }>("GET", "/v1/newaddress?type=0");
+        await rpc("sendtoaddress", [address, 1], "miner");
+        await mine(1, minerAddr);
+        log(`sent 1 more BTC to lnd-${a}`);
+        continue; // the channel is opened on the next round, once the node has seen its coins
+      }
+      // Right after a block, LND answers "channels cannot be created before the wallet is fully synced"
+      // for a few seconds. Ask again, as the first channels above do.
+      await until(`one more channel ${a} -> ${b}`, async () => {
+        await lnd[a].request("POST", "/v1/channels", { node_pubkey: Buffer.from(info[b].identity_pubkey, "hex").toString("base64"), local_funding_amount: String(CHANNEL_SAT) });
+        return true;
+      }, 30);
+      opened = true;
+      log(`${a} could send only ${canSend} sats to ${b}: opened one more channel`);
+    }
+    if (opened) await mine(6, minerAddr);
+    return opened;
+  }
+
+  if (await addLiquidity()) {
+    for (const [a, b] of links) {
+      await until(`the new channel ${a} -> ${b} to be active`, async () => {
+        await mine(1, minerAddr);
+        const pending = await lnd[a].request<{ pending_open_channels?: unknown[] }>("GET", "/v1/channels/pending");
+        const chans = (await lnd[a].request<{ channels?: Chan[] }>("GET", "/v1/channels")).channels ?? [];
+        return (pending.pending_open_channels ?? []).length === 0 && chans.filter((c) => c.remote_pubkey === info[b].identity_pubkey).every((c) => c.active);
+      }, 90);
+    }
+  }
+
   writeFileSync("/tmp/ready", new Date().toISOString());
   log("READY: channels world <-> gw <-> mint are active");
 
@@ -168,6 +235,7 @@ async function main(): Promise<void> {
   for (;;) {
     await sleep(30_000);
     await mine(1, minerAddr).catch((e) => log("mining failed", String(e)));
+    await addLiquidity().catch((e) => log("liquidity check failed", String(e)));
   }
 }
 

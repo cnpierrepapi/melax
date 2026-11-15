@@ -26,8 +26,59 @@ services:
       - lnd-world:/lnd/world:ro
       - lnd-gw:/lnd/gw:ro
       - lnd-mint:/lnd/mint:ro
+      # It copies two nodes' credentials here for the demo gateway, which runs unprivileged.
+      - demo-keys:/keys
     healthcheck:
       test: ["CMD-SHELL", "test -f /tmp/ready"]
       interval: 3s
       timeout: 3s
       retries: 200
+
+  # The gateway in demo mode: the wallet, the landing page and the web phone simulator on port 8787.
+  # Everything marked "demo value" below is public and only fit for this private test network.
+  app:
+    build: .
+    image: melax-app
+    restart: unless-stopped
+    depends_on:
+      regtest-init:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      mint:
+        condition: service_healthy
+    environment:
+      MELAX_DEMO: "1"
+      DEMO_SEED: "1"
+      # Demo value. A real deployment draws its own 32 random bytes and keeps them out of any file in the repository.
+      MELAX_PEPPER: ${MELAX_PEPPER:-00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff}
+      HOST: 0.0.0.0
+      PORT: "8787"
+      DATABASE_URL: postgres://melax:${POSTGRES_PASSWORD:-melax}@postgres:5432/melax
+      MINT_URL: http://mint:3338
+      LND_REST_URL: https://lnd-gw:8080
+      LND_MACAROON_PATH: /keys/lnd-gw/admin.macaroon
+      LND_TLS_CERT_PATH: /keys/lnd-gw/tls.cert
+      # The node that plays everybody else pays the top-ups. Regtest only: the gateway checks.
+      DEMO_WORLD_LND_REST_URL: https://lnd-world:8080
+      DEMO_WORLD_LND_MACAROON_PATH: /keys/lnd-world/admin.macaroon
+      DEMO_WORLD_LND_TLS_CERT_PATH: /keys/lnd-world/tls.cert
+      # Demo value: a fixed rate, so the demo works with no internet and the numbers stay round.
+      # Start with RATE_FIXED_XOF_PER_BTC= (empty) to use the live rate instead.
+      RATE_FIXED_XOF_PER_BTC: ${RATE_FIXED_XOF_PER_BTC-40000000}
+    volumes:
+      - demo-keys:/keys:ro
+    ports:
+      - "127.0.0.1:8787:8787"
+    stop_grace_period: 10s
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      # Checked every 2 s while starting (the seed takes about 10 s), then twice a minute.
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+      start_interval: 2s
+
+volumes:
+  demo-keys:

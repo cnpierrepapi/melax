@@ -2,7 +2,7 @@
 // swap the database, the clock, the SMS adapter and the log, and so no module reaches for a global.
 // Contract: the server pepper is split into three keys here (code hashing, phone lookups, sealing), and
 // the vault keeps its own derivation. The vault's single settle hook is given to the SettleRouter.
-// Callers: main.ts (production wiring), tests (helpers.ts).
+// Callers: main.ts (production wiring), tests (helpers.ts), scripts/demo-seed.ts.
 import type { Clock, Logger } from "@melax/core";
 import type { MintClient } from "@melax/cashu";
 import { deriveKey } from "@melax/crypto";
@@ -28,6 +28,11 @@ export interface AppDeps {
   mint: MintClient;
   /** The gateway's own Lightning node. */
   ln: LightningBackend;
+  /**
+   * Regtest demo only: the node that plays everybody else. When it is set, the web simulator gets a
+   * top-up button that pays the gateway's invoices from it (demo.ts). Never set on a public network.
+   */
+  world?: LightningBackend;
   sms: SmsAdapter;
   config: Config;
   fetch?: (url: string, init?: RequestInit) => Promise<Response>;
@@ -57,7 +62,7 @@ export function buildApp(deps: AppDeps): App {
   const outbox = new SmsOutbox({ db, clock, log, adapter: deps.sms, phoneKey, dataKey, keepBodies: config.demo });
   const users = new Users({ db, clock, log, pinPepper, phoneKey, dataKey, outbox, domain: config.domain, code: config.ussdCode });
   const rates = new Rates({ db, clock, log, fixedXofPerBtc: config.rateFixed, fetch: deps.fetch });
-  const wallet = new Wallet({ db, clock, log, vault, users, rates, outbox, settle });
+  const wallet = new Wallet({ db, clock, log, vault, ln: deps.ln, users, rates, outbox, settle });
   const inbound = new SmsInbound({ db, clock, log, users, wallet, outbox, code: config.ussdCode });
 
   const runtime = new UssdRuntime<S, Effect, Res>({

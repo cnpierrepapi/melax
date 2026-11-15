@@ -70,6 +70,49 @@ const mutations = [
     to: "void limit;",
     run: int("same headroom"),
   },
+  // ----- phase 5: the demo surface and deposits -----
+  {
+    name: "the demo routes are mounted outside demo mode",
+    file: "apps/gateway/src/http.ts",
+    from: "  if (config.demo) {\n    const sim = simulator(app.runtime);",
+    to: "  if (config.demo || true) {\n    const sim = simulator(app.runtime);",
+    run: unit("demo.test.ts"),
+  },
+  {
+    name: "a top-up has no upper limit",
+    file: "apps/gateway/src/demo.ts",
+    from: " || fcfa > FUND_CAP_FCFA)",
+    to: ")",
+    run: unit("demo.test.ts"),
+  },
+  {
+    name: "the top-up node is used on any network",
+    file: "apps/gateway/src/demo.ts",
+    from: 'if (mine.network === "regtest" && theirs.network === "regtest") return world;',
+    to: "if (mine.network && theirs.network) return world;",
+    run: unit("demo.test.ts"),
+  },
+  {
+    name: "a deposit is credited for an invoice that is not settled",
+    file: "apps/gateway/src/wallet.ts",
+    from: 'if (!inv || inv.state !== "settled" || ',
+    to: "if (!inv || ",
+    run: unit("demo.test.ts"),
+  },
+  {
+    name: "the state page shows user ids instead of first names",
+    file: "apps/gateway/src/demo.ts",
+    from: 'if (parts[0] === "user") return `${names.get(parts[1]!) ?? "?"}:${last}`;',
+    to: "if (parts[0] === \"user\") return account;",
+    run: unit("demo.test.ts"),
+  },
+  {
+    name: "the seed runs on a database that already has users",
+    file: "apps/gateway/src/demo.ts",
+    from: '  if ((await app.db.query("SELECT 1 FROM users LIMIT 1")).length > 0) return { seeded: false, funded: false };\n',
+    to: "",
+    run: unit("demo.test.ts"),
+  },
 ];
 
 const only = process.argv[2];

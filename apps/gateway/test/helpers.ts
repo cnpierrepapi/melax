@@ -46,7 +46,7 @@ export async function newDb(): Promise<Db> {
 
 export function testApp(
   db: Db,
-  opts: { mint?: MintClient; ln?: LightningBackend; env?: Record<string, string>; clock?: FakeClock; fetch?: (url: string, init?: RequestInit) => Promise<Response> } = {},
+  opts: { mint?: MintClient; ln?: LightningBackend; world?: LightningBackend; env?: Record<string, string>; clock?: FakeClock; fetch?: (url: string, init?: RequestInit) => Promise<Response> } = {},
 ): TestApp {
   const clock = opts.clock ?? new FakeClock(Date.now());
   const sms = new MemorySms();
@@ -64,6 +64,7 @@ export function testApp(
     log: createLogger({ sink: (line) => logs.push(line), clock, level: "debug" }),
     mint: opts.mint ?? untouchable<MintClient>("the mint"),
     ln: opts.ln ?? untouchable<LightningBackend>("the Lightning node"),
+    world: opts.world,
     sms,
     config,
     fetch: opts.fetch,
