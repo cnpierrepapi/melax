@@ -1,6 +1,6 @@
 # Melax litepaper
 
-Draft of 15 Nov 2026. Melax is Wolof for lightning.
+Draft of 15 Nov 2026, updated after phase 4 (the wallet menus). Melax is Wolof for lightning.
 
 ## What it is
 
@@ -34,9 +34,12 @@ line carries a fingerprint of the line before it. Tear out a page or change a fi
 matching. Anyone with the book can check that.
 
 So a payment from Awa to Moussa goes like this. Awa dials, picks Send, types Moussa's number and 500. The screen
-shows `Send 500 F (808 sats) to Moussa (77*****67)?`. She confirms and types her code. The server takes notes
-worth 808 sats out of her drawer, hands them to the mint, and gets fresh notes back: 808 for Moussa's drawer and
-the change for hers. The exercise book gets its line. Both phones get an SMS.
+shows `Send 500 F (1 250 sats) to Moussa (78*****33)?`. She confirms and types her code. The server takes notes
+worth 1,250 sats out of her drawer, hands them to the mint, and gets fresh notes back: 1,250 for Moussa's drawer
+and the change for hers. The exercise book gets its line. Both phones get an SMS with the same receipt number.
+
+That is not a sketch any more. It is the first test in `apps/gateway/test/wallet.itest.ts`, with those numbers,
+against the real mint.
 
 ## What exists today, and what does not
 
@@ -47,9 +50,13 @@ Built and tested as of this draft:
 - The exercise book. I ran 10,000 random sequences of operations against it and the totals always came back to zero.
 - The drawer and the note handling: deposits, transfers, vouchers locked to a code, pay-outs, and recovery after a crash. 36 tests against the real mint, then 1,000 random sends. The long run and the crash tests end by asking the mint whether every note I believe I hold is still unspent. It was.
 - Secret code hashing and lockout, spending limits, SMS handling, the menu engine, and every screen in French, Wolof and English.
+- The wallet itself, through the menus: open an account, read a balance, send to another number, see how to receive, read the history, change the code, the language or the address name. 143 tests without a network, 15 more with real ecash. I started the server once on the test network and walked the menus over HTTP.
 
-Designed and not built yet: the wallet menus themselves, the phone simulator you can click on, the agent cash-in
-and cash-out, Lightning addresses, the public reserve check, the voice line. The order is in `docs/PLAN.md`.
+Designed and not built yet: the phone simulator you can click on, the agent cash-in and cash-out, vouchers and
+shops, Lightning addresses that can be paid, the public reserve check, the voice line. The order is in `docs/PLAN.md`.
+
+One gap matters more than the rest today. Money can only get into an account through a helper in the tests. The
+menus move real ecash between accounts, but the door in from outside comes with the next phases.
 
 I would rather show less and have every part of it be real.
 
@@ -186,7 +193,13 @@ Cost: no automatic type checking of queries, and I write migrations by hand.
 
 Users think in francs, the system keeps sats. I show both and keep limits in francs.
 
-Cost: the rate can move between the screen and the payment, and rounding can be off by up to one franc.
+The rate moves all day, so which sats count: the ones on the confirm screen, or the ones worked out again when
+the code is typed? I went with the screen. What you agreed to is what leaves. Between two users nobody gains or
+loses on the rate, so there is nothing to protect by recomputing. If the two ever differ by more than 5 percent
+the server refuses, because that would be a bug and not a price move.
+
+Cost: rounding can be off by up to one franc, and a quote can be a few minutes old if the line dropped and the
+session was picked up again.
 
 ### 13. Fees
 
@@ -203,12 +216,84 @@ and legal advice. None of that fits in a hackathon, and pretending otherwise wou
 
 Cost: a judge cannot pay in from their own wallet yet. A public test network profile is in the plan.
 
+### 15. Does reading a balance need the code
+
+Leaving it open is one step shorter, and the balance is the screen people use most. But a phone with buttons
+gets lent, to a child, a neighbour, the person at the next stall. What is in the account is nobody's business
+but the owner's.
+
+Balance and history ask for the code. Limits, the address and the language do not.
+
+Cost: one more step, every time.
+
+### 16. One long dial string, or the code typed by hand
+
+Shortcodes can carry the whole request: `#2580*2*781112233*500#` jumps straight to the confirm screen. The
+tempting next step is to put the code in there too and pay in one dial.
+
+I stopped at the code. A dial string stays in the phone's call log, where anyone who picks the phone up can read
+it. So whatever was pre-typed is thrown away the moment a code prompt comes up, and the code is always typed
+into the prompt. If someone dials the long version anyway, the code in it is ignored and they are asked again.
+
+Cost: paying always takes at least two steps.
+
+### 17. When the receipt gets written
+
+The simple order is: move the money, then write the history line, then queue the SMS. Three steps, and a crash
+between any two leaves money that moved with no trace of it for the user.
+
+The history lines, the receipt number and both SMS are written in the same database transaction that settles the
+notes. Either all of it exists or none of it does. This also covers the slow case: when the mint goes quiet and
+the answer is only found later, the receipts are written then, by the same code.
+
+One exception, on purpose. If an SMS cannot be put together, say a name that will not fit the alphabet, the
+money still settles and the problem is logged. The other order would leave money locked because of a sentence.
+
+Cost: every new kind of payment has to plug into that one place.
+
+### 18. Two phones, one limit
+
+A daily limit is checked before a send. Two sessions on the same account can both pass the check and then both
+send. The clean fix is a lock in the database. The quick fix is a queue in the server's memory: one send per
+person at a time, and the limit is checked again after the code.
+
+I took the quick one and tested it with two sessions typing the code at the same instant. One goes through, the
+other is told the limit is reached.
+
+Cost: it only holds while there is a single server process. Before there are two, the queue has to move into the
+database. It is on the list.
+
+### 19. Who gets an SMS back
+
+A stranger texts SOLDE. The friendly thing is to answer "dial #2580# to open an account".
+
+But the sender of an SMS can be forged. A server that answers every number will text any phone an attacker
+names, at my cost and in my name. So a number with no account gets silence, an account gets at most five replies
+in ten minutes, and nothing an SMS can ask for moves money out.
+
+Cost: a curious person who texts first hears nothing.
+
+### 20. Tests that passed the first time
+
+I wrote the menu tests before the menus. When the code was done they all passed on the first run. That sounds
+good and proves little: a test that has never failed has not shown it can.
+
+So I broke the code on purpose, one line at a time. Let the dial string reach the code prompt. Let a session
+resume at the code prompt. Skip the lock. Skip the code on a send. Nine of these, each followed by the tests.
+All nine were caught, and the script that does it is in the repository (`scripts/mutate.mjs`).
+
+Cost: nine lines is a sample. It is not a proof that every line is guarded.
+
 ## What I do not claim
 
 - The Wolof was written by me and no native speaker has read it yet.
 - No SMS has gone through a physical phone. The adapters are tested against the documented formats.
 - No short code is live. The server speaks the protocol aggregators use, which proves the software and not the contract.
 - This is not legal to run with real money in Senegal today without advice.
+- Nobody can pay into an account from outside yet, and the address shown on the screens cannot be paid yet.
+- The server has been started by hand on my machine. It is not deployed anywhere, and its clean shutdown has never run.
+- It has to run as a single process for now.
+- Anyone can type numbers into the send screen and learn which ones have an account and the owner's first name. Showing the name is the point of that screen. Limiting how often is not built.
 
 ## Questions I expect
 
@@ -226,11 +311,16 @@ These answers describe the design. The section above says which parts are built.
 
 *What happens if the phone is stolen?* Nothing moves without the code. Five wrong tries lock it. Limits cap what a thief could take even with the code.
 
+*Can someone empty my account by faking an SMS from my number?* No. An SMS can ask for a balance or for help. Sending needs a USSD session and the code.
+
+*The line dropped while I was typing. Did I pay?* If you had not typed the code, nothing moved, and dialling again offers to continue from the confirm screen. If you had, either you get the receipt by SMS or an SMS saying it did not go through. The server finds out which. It does not guess.
+
 *How do you know the books are right?* The vault tests end by comparing the ledger with the notes held, account by account. The long run and the crash tests also ask the mint whether those notes are still unspent.
 
 ## Words used here
 
 - USSD: the menu system behind codes like `#144#`. Works on every phone, no data.
+- Dial string: a short code with the answers already in it, like `#2580*2*781112233*500#`.
 - Sat: one hundred-millionth of a bitcoin.
 - Lightning: bitcoin's fast payment network.
 - Ecash, Cashu: digital notes signed by a mint that cannot trace them.

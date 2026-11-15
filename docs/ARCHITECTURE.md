@@ -1,16 +1,16 @@
 # Architecture
 
 What each part is, why it is there, and how a sat moves through real functions. Updated at the end of every phase.
-This describes what exists after phase 3. Parts that are only planned are in `docs/PLAN.md`.
+This describes what exists after phase 4. Parts that are only planned are in `docs/PLAN.md`.
 
 ## The shape
 
 ```
- feature phone --USSD--> aggregator --+
- feature phone --SMS---> phone gateway +--> gateway (apps/gateway, phase 4) --> ledger + vault (Postgres)
- web simulator ------------------------+                |
-                                                        +--> mint client --> Nutshell mint --> its own LND node
- someone's Lightning wallet <--> gateway's LND node <---+
+ feature phone --USSD--> aggregator ---+
+ feature phone --SMS---> phone gateway +--> gateway (apps/gateway) --> ledger + vault (Postgres)
+ web simulator (phase 5) --------------+             |
+                                                     +--> mint client --> Nutshell mint --> its own LND node
+ someone's Lightning wallet <--> gateway's LND node <-+
 ```
 
 Two trust domains, two sets of keys:
@@ -25,7 +25,7 @@ On regtest a third file (`infra/compose.regtest.yml`) adds the test chain and a 
 | Module | Contract | Depends on |
 |---|---|---|
 | `packages/core` | No I/O. Errors with stable codes, sortable ids, an injectable clock, E.164 phone numbers, whole-sat and whole-franc maths, and the only logger, which redacts | nothing |
-| `packages/crypto` | Thin wrappers over node:crypto. Argon2id for PINs, AES-256-GCM sealing with an owner tag, HMAC phone lookups, voucher codes with a proven check character | core |
+| `packages/crypto` | Thin wrappers over node:crypto. Argon2id for PINs, AES-256-GCM sealing with a purpose tag, HMAC phone lookups, one key per purpose from the pepper, voucher codes with a proven check character | core |
 | `packages/ledger` | `Db` (plain SQL, transactions, the same on Postgres and PGlite), append-only migrations, and `post()`: balanced entries, idempotent, hash chained, nothing internal below zero | core |
 | `packages/lightning` | `LightningBackend`: invoices, hold invoices, pay, lookups. `pay` never throws for a payment that may have left | core |
 | `packages/cashu` | `MintClient`: every mint operation as plan (pure) then run, with a recover call for each | core, crypto |
@@ -34,17 +34,41 @@ On regtest a third file (`infra/compose.regtest.yml`) adds the test chain and a 
 | `packages/sms` | GSM-7 checks, inbound command parser, phone-gateway adapters, webhook verification | core |
 | `packages/ussd` | Screens that cannot exceed 160 GSM-7 characters, pure menu machines, the session runtime, aggregator adapters | core, sms |
 | `packages/i18n` | Every user-facing string in three languages | core, sms |
+| `apps/gateway` | The service a phone talks to. Its parts are below | all of the above |
+
+Inside `apps/gateway/src`:
+
+| File | Contract |
+|---|---|
+| `config.ts` | The environment, read once. Secrets come from there only and never appear in an error |
+| `schema.ts` | The gateway's tables. Append-only migrations |
+| `users.ts` | Who a number is. The one place a secret code is compared, counted and locked |
+| `rates.ts` | FCFA per bitcoin: a live source, the euro peg as fallback, a cache, and no invented value |
+| `wallet.ts` | Balance, recipient lookup, quote, send, history, limits. Moves money through the vault only |
+| `settle.ts` | Owns the vault's single settle hook and routes it to the flow that started the operation |
+| `smsout.ts` | SMS queued inside the transaction they report, sealed at rest, sent by a timer, retried |
+| `smsin.ts` | Inbound SMS commands. None moves money. Strangers get no reply |
+| `ussd/machine.ts` | The menus as a pure machine: state in, screen or effect out |
+| `ussd/perform.ts` | Runs each effect by calling a service. The caller is always the session's own number |
+| `http.ts` | The routes aggregators and phone gateways call. Each one mounts only when its secret is set |
+| `app.ts` | Builds all of the above from injected parts, so tests can swap the database, clock, SMS adapter and log |
+| `main.ts` | Boot: migrate, connect, finish what a previous run left open, listen, start two timers |
 
 ## The data that flows
 
 - `PlainProof` (`packages/cashu/src/index.ts`): one ecash note as plain JSON: keyset id, amount in sats, secret, signature `C`, optional DLEQ proof and witness.
 - `SwapPlan`, `MintPlan`, `MeltPlan`: the inputs and the exact outputs (secrets and blinding factors) of one mint operation. Plain JSON, sealed and stored before the network call.
-- `ops` row (`packages/vault/src/index.ts`, migration `vault/001-init`): one operation: kind, idempotency key, owner, stage, status, amount, public data, sealed plan.
+- `ops` row (`packages/vault/src/index.ts`, migration `vault/001-init`): one operation: kind, idempotency key, owner, stage, status, amount, public data, sealed plan. `data.meta.t` names the flow that started it.
 - Journal entry (`packages/ledger/src/ledger.ts`): kind, idempotency key, postings that sum to zero, hash of the previous entry.
+- `users` row (`apps/gateway/src/schema.ts`): id, the number as an HMAC and as a sealed copy, a masked form for screens, first name, address name, language, role, the code's Argon2id hash, the wrong-try counter and lock time, the freeze time.
+- `txlog` row: one side of a movement as the user reads it: signed sats and francs, the other party's first name, the receipt number, the vault operation it came from, and whether it counts toward the limits.
+- `sms_outbox` row: the number and the text, both sealed, with a status and a retry time.
+- Menu state `S` (`ussd/machine.ts`): `{ at, lang, profile, v, q }`. `at` is the step, `v` what was typed so far, `q` the inputs still queued from a dial string.
+- `Effect` and `Res`: what the machine asks for (`profile`, `register`, `balance`, `resolve`, `quote`, `send`, `receiveInfo`, `receiveSms`, `history`, `pinChange`, `setLang`, `address`, `setAlias`, `limits`) and the one shape every answer has: `{ ok: true, ... }` or `{ ok: false, err, ... }`.
 
 ## Walkthrough 1: sats arrive and become a user's ecash
 
-1. A payment settles on the gateway's node. The caller posts `ext:lightning -> float:node` with `post()`. (Today a test helper does this: `deposit()` in `packages/vault/test/vault.itest.ts`. Phase 8 does it from the invoice listener.)
+1. A payment settles on the gateway's node. The caller posts `ext:lightning -> float:node` with `post()`. (Today a test helper does this: `fund()` in `apps/gateway/test/wallet.itest.ts`. Phase 5 adds a demo route for it and phase 8 does it from the invoice listener.)
 2. `Vault.mintFor()` asks the mint for a quote (`MintClient.mintQuote`), checks the invoice amount with `decodeInvoice`, and builds the outputs (`MintClient.planMint`).
 3. In one transaction it posts `float:node -> float:minting` and inserts the `ops` row with the sealed plan (`insertOp`).
 4. `driveMint()` checks `ln.lookupPayment(hash)` first, so a payment is never sent twice, then `ln.pay()`.
@@ -53,7 +77,7 @@ On regtest a third file (`infra/compose.regtest.yml`) adds the test chain and a 
 
 If the process dies after step 4, `Vault.recover()` calls `driveMint()` again: the node says the payment succeeded, the mint says the quote is issued, and `recoverMint()` rebuilds the same proofs from the stored plan through the mint's restore endpoint.
 
-## Walkthrough 2: one user sends to another
+## Walkthrough 2: one user sends to another (inside the vault)
 
 1. `Vault.transfer()` calls `startSwap()`. `ensureOwners()` commits a salt for both owners.
 2. In one transaction: `lockOwner()` takes the sender's row lock, `assertFree()` refuses if another outgoing operation is pending, `select()` picks live proofs, `MintClient.planSwap()` builds outputs for the receiver and the change, `post()` moves the amount from `spendable` to `locked`, the picked proofs become `reserved`, and the op is stored with the sealed plan.
@@ -73,10 +97,35 @@ A voucher is the same call with a `lock` (NUT-11 P2PK) and an owner named `vouch
 5. Paid: exact proofs become `spent`, change proofs are sealed for the owner, `post()` moves `locked -> ext:lightning` for amount plus the fee actually paid and returns the rest to `spendable`.
 6. Unpaid: `failMelt()` makes the exact proofs live again and releases the ledger lock. Pending or no answer: nothing changes until the next `resume()`.
 
+## Walkthrough 4: from a keypad to two SMS
+
+Awa dials `#2580#`, picks Envoyer, types Moussa's number and 500, confirms, types her code.
+
+1. The aggregator posts to `/ussd/at/<secret>` (`http.ts`). The secret is compared in constant time and the caller's address is checked against the allow-list. `africasTalking()` turns the cumulative text into one input and calls `UssdRuntime.handle()`.
+2. The runtime starts the machine at `boot`, which emits the effect `profile`. `createPerform()` looks the number up with `Users.findByPhone()` (an HMAC of the number) and answers with her language. The machine goes to `home` and the runtime returns the menu.
+3. "2" leads to `send.to`. The number she types is sent as the effect `resolve`: `Wallet.resolve()` finds Moussa and returns his user id, first name and masked number. The id is what the session keeps. His number is not stored in it.
+4. "500" becomes the effect `quote`: `Wallet.quote()` runs `checkSpend()` against what she sent today and this month (`txlog` rows marked `spend`), converts with `Rates.get()` and checks her balance. The confirm screen shows 500 F, the sats, Moussa's name.
+5. "1" leads to `send.pin`. If a dial string had queued more inputs, `drain()` drops them here.
+6. Her code becomes the effect `send`. `Wallet.send()`:
+   - `Users.checkPin(id, pin, "spend")` takes the row lock, refuses if locked, verifies the Argon2id hash, counts a wrong try, and refuses a frozen account;
+   - `serial()` makes this the only send of hers in progress;
+   - `vault.findOp("ussd:<sessionId>:send")` returns an earlier outcome if this session already sent;
+   - the limits are checked again, because another session may have spent since the quote;
+   - `vault.transfer()` runs walkthrough 2, with `meta: { t: "send", sender, recipient, fcfa, rate }`.
+7. When the vault settles, `SettleRouter.dispatch()` calls `Wallet.onSendSettled()` inside the settle transaction: one receipt number from the sequence, two `txlog` rows, and two SMS through `SmsOutbox.queue()`, each in its reader's language.
+8. `Wallet.outcome()` reads the receipt number back and the machine closes with "Envoye: 500 F a Moussa. Recu no 1001".
+9. A timer in `main.ts` calls `SmsOutbox.flush()`, which opens each sealed row and hands it to the adapter.
+
+If the mint does not answer in step 6, `vault.transfer()` returns `pending`, the screen says an SMS will follow,
+and the money stays locked. The other timer calls `Vault.recover()`. When it finds out what happened, step 7 runs
+then: either the two receipts, or one SMS to Awa saying the payment did not go through.
+
 ## Why it is built this way
 
-The short version is in `docs/DECISIONS.md`, the plain-words version in `docs/LITEPAPER.md`. The three choices that shape everything else:
+The short version is in `docs/DECISIONS.md`, the plain-words version in `docs/LITEPAPER.md`. The choices that shape everything else:
 
 - Ecash instead of balances in a table (decision 23 and litepaper choice 2): the party that can issue money knows no one, the party that knows people cannot issue.
 - Plan, store, then run (decision 14): the only safe answer to a lost reply is to ask what happened.
 - Real mint and real nodes in tests (decision 13): the bugs worth finding live in the gap between a stand-in and the real thing.
+- Menus as a pure machine with effects on the side (decision 24): every path can be replayed as text, and the place where a code may exist is small enough to check.
+- Receipts written in the same transaction as the money (decision 27): there is no moment where one exists without the other.

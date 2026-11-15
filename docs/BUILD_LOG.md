@@ -60,6 +60,35 @@ The owner asked for the build to run in numbered phases with a stop after each, 
 - `docs/LITEPAPER.md`, `docs/DECISIONS.md` and `docs/ARCHITECTURE.md` written.
 - Measured the mint's fee reserve with `scripts/probe/fee-reserve-probe.ts`: 3 to 4 sats for 100 to 500,000 sats when the mint's node knows a route. With its channels down the mint falls back to 1 % and the vault's fee cap refuses pay-outs of 1,000 sats or more.
 
+### Phase 4: the wallet over USSD
+
+A person with any phone can now open an account, set a code, read a balance, send to another Melax number, see
+how to receive, read their history and change their code, language or address name. It runs through the USSD
+engine on regtest with real ecash.
+
+What went in:
+
+- `apps/gateway`: configuration, six tables, accounts and codes, the exchange rate, the wallet, the SMS outbox, inbound SMS, the menu machine, the effect runner, the HTTP routes and the boot file. About 3,900 lines with tests.
+- The menus are one pure machine. I wrote its tests before the machine: French transcripts by hand, and 33 golden files for the same flows in three languages. They passed on the first run, so the only failure I watched was the missing module. To make up for that I broke the code on purpose afterwards (see below).
+- A send checks the code, then the limits, then moves the ecash. The history rows, the receipt number and both SMS are written inside the transaction that settles the ecash.
+- `docs/threat-model.md`, an ESLint config, and a GitHub Actions workflow for type check, lint and unit tests.
+
+Numbers from this machine:
+
+- 252 unit tests in 18 s. 71 integration tests in 182 s.
+- The 15 wallet integration tests take 33 to 40 s. They pass on PGlite and on Postgres 17. The 143 gateway unit tests pass on both too, including ten wrong codes sent at the same moment.
+- With the mint cut off, a send comes back as "in progress" within a few seconds: the whole test, sign-ups and deposit included, takes under 7 s. The Cashu library gives up its retries faster than I expected.
+- The server was started by hand on the regtest stack with Postgres 17. It read 38,919,778 F per bitcoin from CoinGecko. The first balance took 652 ms because it fetched the rate. The sign-up took 71 ms, most of it the slow hash on the code. Every other screen took 1 to 8 ms.
+
+Breaking it on purpose. `scripts/mutate.mjs` changes one guarded line, runs the tests that should notice, and
+puts the line back. Nine lines: the dial-string queue reaching a code prompt, a session resuming at a code prompt,
+a locked code still being compared, the Africa's Talking allow-list, history without the code, SMS replies without
+a cap, sends of one user running side by side, a send without the code, and the limit checked only before the
+code. All nine made a test fail.
+
+Not done in this phase, and said so in `docs/status.md`: the clean shutdown has never run, money enters an account
+only through a test helper, and the address on the screens is not payable yet.
+
 ## Defect log
 
 | # | What happened | Cause | Fix |
@@ -82,3 +111,13 @@ The owner asked for the build to run in numbered phases with a stop after each, 
 | 16 | Two official sources disagree on the SMS gateway's webhook field for the sender | The project README says `phoneNumber`, its docs site says `sender` | The adapter reads both. Both shapes are fixtures in the test |
 | 17 | After a night stopped, `docker compose up` never became ready. The Lightning nodes answered "RPC server is in the process of starting up" for minutes | LND treats a chain whose last block is hours old as not synced and will not finish starting. The helper that mines blocks was waiting for LND to be ready. Each waited for the other | The helper mines one block before it waits for the nodes and keeps one coming while they sync |
 | 18 | With defect 17 fixed, the gateway to mint channel stayed inactive, and the mint asked a 1 % fee reserve on every quote | After the restart the nodes did not reconnect. The helper only connected peers when it opened a channel. With no route known, the mint falls back to its percentage reserve | The helper connects the peers by host name on every run. Ready one second after the nodes are up |
+| 19 | Three scripted edits came out wrong: a `\n` inside a message became a real line break, a regex lost its backslashes, and a test string was split over three lines. A fourth one-liner failed to parse for the same reason | I wrote small Node scripts through a shell heredoc. The shell layer on this machine eats one level of backslashes before the file exists. Defect 5 was the same cause and I repeated it | Fixed each by hand. Rule 31 now says it without a loophole: edits go through the editor. A script that moves whole lines around and holds no backslash is still allowed |
+| 20 | The "restart, then recover" tests left the send pending: "sealed data failed authentication" | The test helper drew a fresh random server secret for every app it built, so the restarted app could not open the plan the first one had sealed. Not a product bug, and the product did the right thing: it refused to guess | The test keeps one secret per test, as a real restart keeps its environment. Rule 40 |
+| 21 | Two tests typed a menu choice and got the wrong screen | The session before had been left open on a prompt, so the next dial began with "Reprendre ou vous en etiez?" and the test's first key answered that. The product was right | The tests now read the offer and answer it. One of them became a check that the offer leads to the account menu and never to the code prompt |
+| 22 | Found on reading, before any run: the balance printed on a receipt could be far off for small sends | The first draft worked the rate back out of the francs and sats of the send. At 39 million F per bitcoin, 1 F is 3 sats after rounding, which implies a rate 15 % away from the real one | The operation stores the real rate it was made at |
+| 23 | Found while designing the resume rules: after walking back to a screen that is not worth resuming, the next dial offered the screen before it | The USSD runtime only stored a resume point when there was one. It never forgot the old one | `packages/ussd`: no resume point now clears the stored one. One new test |
+| 24 | `npm run lint` had never worked | The script existed since the first day. The config file and the `@eslint/js` package did not | Added both. The first real run found one unused initial value in `lnd.ts` |
+| 25 | A variable set to nothing (`RATE_FIXED_XOF_PER_BTC=`) stopped the server: "Too small" | The number parser read the empty string as zero. Compose files write empty variables all the time. Found by a test that wanted "no fixed rate" | Empty means not set. Rule 54 and a test |
+| 26 | The server could not be stopped from the shell during the manual start | `kill -INT` from Git Bash does not deliver a signal to a native Node process on Windows. I ended it with `taskkill`. So the clean shutdown code has never run | Written down as open in `docs/status.md` and in the phase 5 brief, to be checked in Docker |
+| 27 | `apps/gateway/package.json` pointed at `src/index.ts`, a file that never existed | Left over from the skeleton | Points at `src/app.ts` |
+| 28 | A test asked for a server outside demo mode with the in-memory SMS adapter and was refused at start | The test was wrong. The rule that refused it is the one that keeps a real deployment from "sending" receipts into memory | The test names a real adapter |
