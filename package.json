@@ -23,7 +23,8 @@
     "build:web": "node scripts/build-web.mjs",
     "start": "node apps/gateway/src/main.ts",
     "seed": "node scripts/demo-seed.ts",
-    "smoke": "node scripts/smoke.ts"
+    "smoke": "node scripts/smoke.ts",
+    "crash-demo": "node scripts/crash-demo.ts"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.16",
