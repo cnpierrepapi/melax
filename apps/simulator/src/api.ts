@@ -10,6 +10,8 @@ export interface Person {
   /** Nine digits, as dialled inside Senegal. */
   phone: string;
   lang: string;
+  /** An agent: turns francs into sats and back. The second phone can be one. */
+  agent?: boolean;
 }
 export interface People {
   code: string;

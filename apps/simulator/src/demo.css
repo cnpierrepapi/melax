@@ -206,6 +206,85 @@
   font-size: 0.95rem;
 }
 
+/* The agent walk-through: an indigo band with a yellow edge, set apart from the four steps above it. */
+.agent,
+.agent-offer {
+  margin: 1rem -1rem 0.75rem;
+  padding: 1rem 1rem 0.4rem;
+  background: var(--indigo);
+  color: var(--paper);
+  border-left: 0.5rem solid var(--bolt);
+}
+
+.agent-offer {
+  padding-bottom: 1rem;
+}
+
+.agent-title {
+  font: 700 1.35rem/1.1 var(--display);
+  color: var(--bolt);
+}
+
+.agent-intro {
+  margin-top: 0.4rem;
+  font-size: 0.95rem;
+  max-width: 34rem;
+}
+
+.agent-back {
+  margin: 0.2rem 0 0.4rem;
+  font-size: 0.9rem;
+  color: var(--mute);
+}
+
+.agent-offer .btn {
+  margin-top: 0.7rem;
+}
+
+.agent-list {
+  list-style: none;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  counter-reset: step;
+}
+
+.agent .step {
+  border-top-color: rgb(255 255 255 / 0.2);
+}
+
+.agent .step-title {
+  font-size: 1.05rem;
+}
+
+.guide > .agent:first-child {
+  margin-top: -1rem;
+  border-top-left-radius: 0.3rem;
+  border-top-right-radius: 0.3rem;
+}
+
+/* Two steps only: the second one stays in view on a small screen, unlike the main guide's later steps. */
+.agent .step.later {
+  display: block;
+}
+
+.agent .step.later,
+.agent .step-tip {
+  color: rgb(243 237 226 / 0.65);
+}
+
+.agent .step::before {
+  color: var(--ink);
+  background: var(--paper);
+}
+
+.agent .step.now::before {
+  background: var(--bolt);
+}
+
+.agent .step-ok {
+  color: #9be3b4;
+}
+
 .guide-foot {
   margin-top: 0.4rem;
   border-top: 1px solid var(--paper-2);
@@ -264,9 +343,13 @@
   white-space: nowrap;
 }
 
+.seat-who:has(select) {
+  flex-wrap: wrap; /* a long name, "(agent)" in French or Wolof: the number drops under the picker */
+}
+
 .seat-who select {
   appearance: none;
-  max-width: 11rem;
+  max-width: 100%;
   padding: 0.35rem 1.4rem 0.35rem 0.5rem;
   border: 2px solid var(--ink);
   border-radius: 0.3rem;

@@ -122,12 +122,21 @@ function renderGuide(): void {
   const { step } = progress();
   const name = other?.name ?? "";
   const vars = { name, number: other ? spaced(other.phone) : "", code: info?.code ?? "" };
-  const signature = [step, lang, funding, lookedAtB, me.phone, me.ready, name, info?.topUp.on].join("|");
+  const signature = [step, lang, funding, lookedAtB, me.phone, me.ready, name, info?.topUp.on, other?.agent === true, other?.agent ? agentProgress() : 0].join("|");
   if (signature === drawn) return;
   drawn = signature;
   box.dataset.step = String(step);
   box.replaceChildren();
   renderHint(step, vars);
+
+  // With an agent on the second phone, the agent's two steps are the only thing to do: the four steps
+  // fold away, so two "do this now" steps never compete. Picking anyone else brings them back.
+  if (other?.agent) {
+    $("hint").hidden = true;
+    box.append(agentBox(step)!, h("p", "agent-back", say(lang, "ag.back")));
+    box.append(guideFoot(step));
+    return;
+  }
 
   const head = h("p", "guide-count", step <= 4 ? say(lang, "guide.step", { n: step }) : say(lang, "guide.done"));
   const dots = h("span", "guide-dots");
@@ -173,7 +182,13 @@ function renderGuide(): void {
     end.append(h("h2", "end-title", say(lang, "done.t")), h("p", "end-how", say(lang, "done.d")));
     box.append(end);
   }
+  const withAgent = agentBox(step);
+  if (withAgent) box.append(withAgent);
+  box.append(guideFoot(step));
+}
 
+/** The line under the guide: take a ready account (early on), or start again with a new number. */
+function guideFoot(step: number): HTMLElement {
   const foot = h("p", "guide-foot");
   if (me.ready === "" && step <= 2 && (info?.people.length ?? 0) > 1) {
     const skip = h("button", "link", say(lang, "skip.btn"));
@@ -201,7 +216,77 @@ function renderGuide(): void {
     });
     foot.append(again);
   }
-  box.append(foot);
+  return foot;
+}
+
+// ---------- a cash-in with an agent ----------
+
+/**
+ * Where the agent walk-through stands, from the SMS on the visitor's phone only: a "dep_user" message
+ * means the agent's sats are held and the visitor was told where to pay; a "cashin" message after it
+ * means the agent confirmed and the sats arrived. Messages from before the agent phone was picked
+ * do not count.
+ */
+let agentBase = 0;
+function agentProgress(): 1 | 2 | 3 {
+  const held = smsA.find((m) => m.kind === "dep_user" && m.id > agentBase);
+  if (!held) return 1;
+  return smsA.some((m) => m.kind === "cashin" && m.id > held.id) ? 3 : 2;
+}
+
+function handPhoneB(name: string): void {
+  pickOther(name);
+  agentBase = Math.max(0, ...smsA.map((m) => m.id));
+  phoneB.setOwner(other?.phone ?? "");
+  smsB = [];
+  primed = false;
+  renderAll();
+  void poll();
+}
+
+/** Shown when the second phone is an agent; once the first guide is done, an offer to pick one. */
+function agentBox(step: number): HTMLElement | null {
+  const agent = info?.people.find((p) => p.agent && p.phone !== me.phone);
+  if (!other?.agent) {
+    if (step < 5 || !agent) return null;
+    const offer = h("div", "agent-offer");
+    const b = h("button", "btn btn-go", say(lang, "ag.btn", { name: agent.name }));
+    b.type = "button";
+    b.dataset.testid = "use-agent";
+    b.addEventListener("click", () => handPhoneB(agent.name));
+    offer.append(h("h2", "agent-title", say(lang, "ag.title")), b);
+    return offer;
+  }
+  const vars = { name: other.name, code: info?.code ?? "" };
+  const at = agentProgress();
+  const wrap = h("section", "agent");
+  wrap.dataset.testid = "agent-guide";
+  wrap.dataset.step = String(at);
+  wrap.append(h("h2", "agent-title", say(lang, "ag.title")), h("p", "agent-intro", say(lang, "ag.intro", vars)));
+  const list = h("ol", "agent-list");
+  const steps: Array<{ t: CopyKey; d: CopyKey; ok: CopyKey }> = [
+    { t: "ag1.t", d: "ag1.d", ok: "ag1.ok" },
+    { t: "ag2.t", d: "ag2.d", ok: "ag.done" },
+  ];
+  steps.forEach((s, i) => {
+    const n = i + 1;
+    const li = h("li", n < at ? "step done" : n === at ? "step now" : "step later");
+    li.dataset.testid = `agent-step-${n}`;
+    li.append(h("h3", "step-title", say(lang, s.t, vars)));
+    if (n < at) li.append(h("p", "step-ok", say(lang, s.ok, vars)));
+    if (n === at) {
+      li.append(h("p", "step-how", say(lang, s.d, vars)));
+      if (n === 2) {
+        const b = h("button", "btn btn-go", say(lang, "ag2.show", vars));
+        b.type = "button";
+        b.addEventListener("click", () => show("b"));
+        li.append(b);
+      }
+    }
+    list.append(li);
+  });
+  wrap.append(list);
+  return wrap;
 }
 
 function fundButton(): HTMLElement {
@@ -243,7 +328,7 @@ function show(which: "a" | "b"): void {
 
 function renderLabels(): void {
   const mine = me.ready ? say(lang, "phone.of", { name: me.ready }) : say(lang, "phone.you");
-  const theirs = other ? say(lang, "phone.of", { name: other.name }) : "";
+  const theirs = other ? say(lang, other.agent ? "phone.agent" : "phone.of", { name: other.name }) : "";
   $("tab-a").textContent = mine;
   $("tab-b").textContent = theirs;
   $("label-a").textContent = mine;
@@ -253,7 +338,8 @@ function renderLabels(): void {
   pick.replaceChildren();
   for (const p of info?.people ?? []) {
     if (p.phone === me.phone) continue;
-    const o = h("option", "", say(lang, "phone.of", { name: p.name }));
+    // The tab above already says whose phone it is; the picker keeps to the name, so it fits beside the number.
+    const o = h("option", "", p.agent ? say(lang, "pick.agent", { name: p.name }) : p.name);
     o.value = p.name;
     o.selected = p.name === other?.name;
     pick.append(o);
@@ -380,14 +466,7 @@ async function connect(): Promise<void> {
   $("slot-b").append(phoneB.el);
   $("tab-a").addEventListener("click", () => show("a"));
   $("tab-b").addEventListener("click", () => show("b"));
-  $<HTMLSelectElement>("pick-b").addEventListener("change", (e) => {
-    pickOther((e.target as HTMLSelectElement).value);
-    phoneB.setOwner(other?.phone ?? "");
-    smsB = [];
-    primed = false;
-    renderAll();
-    void poll();
-  });
+  $<HTMLSelectElement>("pick-b").addEventListener("change", (e) => handPhoneB((e.target as HTMLSelectElement).value));
   $("hint").addEventListener("click", () => $("guide").scrollIntoView({ behavior: "smooth", block: "start" }));
   new IntersectionObserver((seen) => {
     guideInView = seen[0]?.isIntersecting ?? true;

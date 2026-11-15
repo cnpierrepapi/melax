@@ -29,6 +29,13 @@ for (const [name, viewport] of sizes) {
     await page.getByTestId("ok-a").click();
     await page.waitForTimeout(1200);
     await page.screenshot({ path: `stills/demo-${name}-${lang}-step3.png`, fullPage: true });
+    // The second phone in an agent's hands: the cash-in walk-through under the guide.
+    if (name === "mobile") await page.getByTestId("tab-b").click();
+    await page.getByTestId("pick-b").selectOption("Ndeye");
+    await page.getByTestId("agent-guide").waitFor();
+    await page.waitForTimeout(800);
+    await page.getByTestId("agent-guide").screenshot({ path: `stills/demo-${name}-${lang}-agent.png` });
+    await page.screenshot({ path: `stills/demo-${name}-${lang}-agent-full.png`, fullPage: true });
     const wide = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     console.log(`${name} ${lang}: sideways overflow ${wide}px`);
     await page.close();
